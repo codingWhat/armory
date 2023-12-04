@@ -107,7 +107,7 @@ func (r *Raft) HandleAppendEntryRequest(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	fmt.Printf("----->>>> noode[%s] get append entry request, %+v, %d \n", r.curNode, aeReq, len(aeReq.Entries))
+	fmt.Printf("----->>>> noode[%s] get append entry request, %+v, %d, %d \n", r.curNode, aeReq, r.currentState, len(aeReq.Entries))
 	ev := &event{payload: &aeReq, c: make(chan error, 1)}
 	r.evChan <- ev
 	err = <-ev.c
@@ -117,7 +117,7 @@ func (r *Raft) HandleAppendEntryRequest(w http.ResponseWriter, req *http.Request
 	_, _ = w.Write(ev.returnValue)
 }
 
-func (r *Raft) sendJoinRequest(leaderAddr string) {
+func (r *Raft) SendJoinRequest(leaderAddr string) {
 	req := &JoinRequest{
 		ServId:   r.servID,
 		AddrInfo: fmt.Sprintf("%s:%d", r.host, r.port),

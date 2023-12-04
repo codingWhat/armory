@@ -41,8 +41,11 @@ func (r *Raft) leaderLoop() {
 		if p.Addr == r.curNode {
 			continue
 		}
+		if p.IsStarted() { //第一次加入的follower, 已经在joinCommand执行一次了。就不重复执行
+			continue
+		}
 		p.SetPrevLogIndex(idx)
-		go p.heartbeat()
+		p.start()
 	}
 
 	r.cmdChan <- &NopCommand{}
@@ -50,7 +53,6 @@ func (r *Raft) leaderLoop() {
 
 		select {
 		case e := <-r.evChan:
-			fmt.Println("=====>leader event", e)
 			var err error
 			switch req := e.payload.(type) {
 			case *AppendEntryResponse:
@@ -62,7 +64,6 @@ func (r *Raft) leaderLoop() {
 			}
 			e.c <- err
 		case cmd := <-r.cmdChan:
-			fmt.Println("=====>leader CmdChan", cmd)
 			var err error
 			switch c := cmd.(type) {
 			case *joinCommand:
@@ -82,12 +83,6 @@ func (r *Raft) leaderLoop() {
 				if err != nil {
 					c.RspChannel() <- err
 				}
-
-				//default:
-				//	err := r.appendEntries(c)
-				//	if err != nil {
-				//		c.RspChannel() <- err
-				//	}
 			}
 		}
 	}

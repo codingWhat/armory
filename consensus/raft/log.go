@@ -24,8 +24,11 @@ type Log struct {
 func (l *Log) GetEntriesAfter(index uint64) []*logEntry {
 	l.RLock()
 	defer l.RUnlock()
-	if len(l.entries) == 0 || index < 1 {
+	if len(l.entries) == 0 {
 		return nil
+	}
+	if index == 0 {
+		return l.entries[0:]
 	}
 
 	return l.entries[index-1:]
@@ -35,7 +38,7 @@ func (l *Log) lastLogInfo() (term uint64, index uint64) {
 	l.RLock()
 	defer l.RUnlock()
 	if len(l.entries) == 0 {
-		return 0, l.startIndex + 1
+		return 0, l.startIndex
 	}
 	lastLog := l.entries[len(l.entries)-1]
 	return lastLog.Term(), lastLog.Index()
@@ -70,6 +73,10 @@ func (l *Log) getTermByIndex(idx uint64) uint64 {
 	l.RLock()
 	defer l.RUnlock()
 	if len(l.entries) == 0 {
+		return 0
+	}
+
+	if idx < 1 {
 		return 0
 	}
 

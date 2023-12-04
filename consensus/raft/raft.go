@@ -18,20 +18,36 @@ const (
 )
 
 type Peer struct {
+	ServID       int
 	Addr         string
 	PrevLogIndex uint64
 	stopCh       chan struct{}
 	sync.RWMutex
 	r *Raft
+
+	isStarted bool
 }
 
+func (p *Peer) IsStarted() bool {
+	p.RLock()
+	defer p.RUnlock()
+	return p.isStarted == true
+}
+
+func (p *Peer) start() {
+	p.Lock()
+	p.isStarted = true
+	p.Unlock()
+
+	go p.heartbeat()
+}
 func (p *Peer) heartbeat() {
-	timeout := 500 * time.Millisecond
+	timeout := 100 * time.Millisecond
 	ticker := time.Tick(timeout)
+
 	for {
 		select {
 		case <-p.stopCh:
-
 			return
 		case <-ticker:
 			p.sendAppendEntries()
@@ -46,7 +62,6 @@ func (p *Peer) sendAppendEntries() {
 		currTerm     = p.r.getCurrentTerm()
 		serID        = p.r.getServID()
 	)
-
 	ae := &AppendEntries{
 		Term:         currTerm,
 		LeaderId:     serID,
@@ -56,6 +71,7 @@ func (p *Peer) sendAppendEntries() {
 		Entries:      p.r.log.GetEntriesAfter(prevLogIndex),
 	}
 	resp := p.r.sendAppendEntryRequest(p.Addr, ae)
+	fmt.Printf("---->leader send ae->after %d, %+v \n", len(ae.Entries), resp)
 	if resp == nil {
 		fmt.Println("[", time.Now().Format("2006-01-02 15:04:05"), "] ", "node:", p.Addr, " sendAppendEntryRequest failed..")
 		return
@@ -66,12 +82,12 @@ func (p *Peer) sendAppendEntries() {
 	if resp.Success() {
 		if len(ae.Entries) > 0 {
 			lastLog := ae.Entries[len(ae.Entries)-1]
-			p.PrevLogIndex = lastLog.Index()
 			//当前leader只能提交当前任期的日志,
 			//看论文Figure-8 如果当前任期比日志的任期新，此时这批日志就不能提交，否则就会发生Figure8中，任期3会把已经提交的数据给覆盖了，raft是不允许的。
 			//只能等待新请求，这就引入了NOP-COMMAND, 根据日志匹配属性，如果返回成功了，说明保证一致性了。
 			if lastLog.Term() == currTerm {
 				p.r.si.incr()
+				p.SetPrevLogIndex(lastLog.Index())
 				//todo 状态更新合并到内部通信的channel，减少锁竞争
 				//刷盘操作异步
 				//if !r.isSyncedToQuorum() {
@@ -110,7 +126,7 @@ func (p *Peer) sendAppendEntries() {
 		}
 	}
 
-	//p.r.evChan <- &event{payload: resp}
+	p.r.evChan <- &event{payload: resp}
 }
 
 func (p *Peer) GetPrevLogIndex() uint64 {
@@ -153,7 +169,7 @@ type Raft struct {
 	commitIndex uint64
 }
 
-func NewRaft(id int, host string, port int, leader string) *Raft {
+func NewRaft(id int, host string, port int) *Raft {
 	r := &Raft{
 		servID:       id,
 		currentState: Follower,
@@ -168,16 +184,23 @@ func NewRaft(id int, host string, port int, leader string) *Raft {
 		port:         port,
 	}
 
-	if leader != "" {
-		go r.sendJoinRequest(leader)
-	}
-
 	err := r.log.init("./persist.log", r)
 	if err != nil {
 		panic(err)
 	}
 
 	return r
+}
+
+func (r *Raft) isPeerStarted(servID int) bool {
+	r.RLock()
+	defer r.RUnlock()
+	p, ok := r.peers[servID]
+	if !ok {
+		return false
+	}
+	return p.IsStarted()
+
 }
 
 func (r *Raft) Run() {

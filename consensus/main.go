@@ -34,7 +34,7 @@ func main() {
 
 	flag.Parse()
 
-	raftServer := raft.NewRaft(servId, host, port, leader)
+	raftServer := raft.NewRaft(servId, host, port)
 
 	//对外
 	http.HandleFunc("/cmd", raftServer.HandleCmd)
@@ -53,9 +53,9 @@ func main() {
 		}
 	}()
 
-	time.Sleep(1 * time.Second)
+	if leader != "" {
+		raftServer.SendJoinRequest(leader)
+	}
 	fmt.Println("consensus run:", time.Now().Format("2006-01-02 15:04:05"))
-
 	raftServer.Run()
-
 }

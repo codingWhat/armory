@@ -128,6 +128,7 @@ func (j *joinCommand) Name() string {
 }
 func (j *joinCommand) Apply(r *Raft) error {
 	fmt.Println("joinCommand---->1")
+
 	r.Lock()
 	fmt.Println("joinCommand---->2")
 	if r.currentState == Follower {
@@ -137,10 +138,15 @@ func (j *joinCommand) Apply(r *Raft) error {
 		Addr:   j.p.AddrInfo,
 		stopCh: make(chan struct{}, 1),
 		r:      r,
+		ServID: j.p.ServId,
 	}
 	r.addPeer(j.p.ServId, p)
 	r.Unlock()
-
+	if !r.isPeerStarted(j.p.ServId) {
+		_, idx := r.lastLogInfo()
+		p.SetPrevLogIndex(idx)
+		p.start()
+	}
 	fmt.Println("joinCommand---->3")
 	return nil
 }
