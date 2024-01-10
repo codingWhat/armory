@@ -53,6 +53,7 @@ func (r *Raft) leaderLoop() {
 
 		select {
 		case e := <-r.evChan:
+			fmt.Println("--->leader evChan", e, e.payload)
 			var err error
 			switch req := e.payload.(type) {
 			case *AppendEntryResponse:
@@ -62,7 +63,10 @@ func (r *Raft) leaderLoop() {
 			case *AppendEntries:
 				e.returnValue, err = r.processAppendEntryRequestForLeader(req)
 			}
-			e.c <- err
+			if e.c != nil {
+				e.c <- err
+			}
+
 		case cmd := <-r.cmdChan:
 			var err error
 			switch c := cmd.(type) {
@@ -89,6 +93,7 @@ func (r *Raft) leaderLoop() {
 }
 
 func (r *Raft) processAppendEntryRsp(rsp *AppendEntryResponse) {
+
 	if rsp.Term < r.currTerm {
 		return
 	}
@@ -119,6 +124,8 @@ func (r *Raft) processAppendEntryRsp(rsp *AppendEntryResponse) {
 		}
 		_ = r.log.Sync()
 	}
+	fmt.Println("---->> commit")
+	return
 }
 
 func (r *Raft) appendEntries(c Command) error {

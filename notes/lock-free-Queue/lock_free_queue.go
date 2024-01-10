@@ -1,4 +1,4 @@
-package event_poll
+package main
 
 import (
 	"sync/atomic"
