@@ -38,7 +38,7 @@ func Test_bitCask(t *testing.T) {
 		k := fmt.Sprintf("ii%d", i)
 		v, err := db.Get(k)
 		if err != nil {
-			//	fmt.Println("---->Get", k, err.Error())
+			fmt.Println("---->Get", k, err.Error())
 		}
 		fmt.Println("---->Get", k, string(v))
 

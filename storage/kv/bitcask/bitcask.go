@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,14 +18,14 @@ import (
 var maxPerFile = 30
 
 type PosInfo struct {
-	FileID string
+	FileID int
 	Offset int64
 }
 
 type DB struct {
 	active     *os.File
 	activeSize int64
-	archives   map[string]*os.File
+	archives   map[int]*os.File
 	index      map[string]*PosInfo
 	sync.RWMutex
 	dir string
@@ -40,8 +41,10 @@ func (db *DB) archivePath() string {
 }
 
 func (db *DB) archive() {
-	db.archives[db.active.Name()] = db.active
-	_ = os.Rename(db.active.Name(), db.archivePath()+db.activeFileName())
+	fileID := pluckFileID(db.active.Name())
+	db.archives[fileID] = db.active
+	name := fmt.Sprintf("archive_%d", fileID)
+	_ = os.Rename(db.active.Name(), db.archivePath()+name)
 
 	fmt.Println("archive----->", db.active.Name(), db.archivePath()+db.activeFileName())
 }
@@ -70,8 +73,9 @@ func Open(dir string) *DB {
 	db := &DB{dir: dir}
 
 	db.index = make(map[string]*PosInfo)
-	db.archives = make(map[string]*os.File)
+	db.archives = make(map[int]*os.File)
 
+	db.loadArchive()
 	db.loadActive()
 	if db.active == nil {
 		db.openActive()
@@ -80,13 +84,45 @@ func Open(dir string) *DB {
 	return db
 }
 
+func (db *DB) loadArchive() {
+	err := filepath.Walk(db.dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println("遍历目录失败:", err)
+			return err
+		}
+		if strings.HasPrefix(info.Name(), "archive") {
+			f, err := os.OpenFile(info.Name(), os.O_RDWR, 0600)
+			if err != nil {
+				panic(err)
+			}
+			db.archives[pluckFileID(info.Name())] = f
+			var offset int64 = 0
+			for {
+				e, err := decode(f)
+				if err == io.EOF {
+					break
+				}
+				db.index[string(e.Key)] = &PosInfo{
+					FileID: pluckFileID(info.Name()), Offset: offset,
+				}
+				offset += int64(e.Size())
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		panic(err)
+	}
+}
+
 func (db *DB) loadActive() {
 	err := filepath.Walk(db.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println("遍历目录失败:", err)
 			return err
 		}
-		if strings.HasPrefix(info.Name(), "log") {
+		if strings.HasPrefix(info.Name(), "active") {
 
 			f, err := os.OpenFile(info.Name(), os.O_RDWR, 0600)
 			if err != nil {
@@ -100,7 +136,7 @@ func (db *DB) loadActive() {
 					break
 				}
 				db.index[string(e.Key)] = &PosInfo{
-					FileID: info.Name(), Offset: offset,
+					FileID: pluckFileID(info.Name()), Offset: offset,
 				}
 				offset += int64(e.Size())
 			}
@@ -113,8 +149,14 @@ func (db *DB) loadActive() {
 	}
 }
 
+func pluckFileID(name string) int {
+	info := strings.Split(name, "_")
+	ret, _ := strconv.Atoi(info[1])
+	return ret
+}
+
 func (db *DB) openActive() {
-	newFileName := fmt.Sprintf("log_%d.log", len(db.archives)+1)
+	newFileName := fmt.Sprintf("active_%d", len(db.archives)+1)
 	file, err := os.OpenFile(db.dir+newFileName, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		panic(err)
@@ -132,11 +174,11 @@ func (db *DB) Put(k string, v []byte) error {
 	//如果超出当前活跃文件大小，则归档当前活跃文件
 	offset := db.activeSize
 
-	fileId := db.active.Name()
+	fileId := pluckFileID(db.active.Name())
 	if db.activeSize+int64(entry.Size()) > int64(maxPerFile) {
 		db.archive()
 		db.openActive()
-		fileId = db.active.Name()
+		fileId = pluckFileID(db.active.Name())
 		offset = 0
 	}
 
@@ -163,7 +205,7 @@ func (db *DB) Get(k string) ([]byte, error) {
 	*/
 	var f *os.File
 	fName := posInfo.FileID
-	if fName == db.active.Name() {
+	if fName == pluckFileID(db.active.Name()) {
 		f = db.active
 		_, err := f.Seek(posInfo.Offset, 0)
 		if err != nil {
