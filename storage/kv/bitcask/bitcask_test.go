@@ -1,7 +1,6 @@
 package bitcask
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -24,8 +23,9 @@ func Test_bitCask(t *testing.T) {
 	//	fmt.Println("遍历目录失败:", err)
 	//}
 
-	db := Open("./")
-	//for i := 0; i < 10; i++ {
+	db := Open("./data/")
+	db.merge()
+	//for i := 0; i < 100; i++ {
 	//	k := fmt.Sprintf("ii%d", i)
 	//	v := fmt.Sprintf("vvv%d", i)
 	//	err := db.Put(k, []byte(v))
@@ -33,16 +33,20 @@ func Test_bitCask(t *testing.T) {
 	//		fmt.Println("----->Put", k, v, err.Error())
 	//	}
 	//}
-
-	for i := 0; i < 10; i++ {
-		k := fmt.Sprintf("ii%d", i)
-		v, err := db.Get(k)
-		if err != nil {
-			fmt.Println("---->Get", k, err.Error())
-		}
-		fmt.Println("---->Get", k, string(v))
-
-	}
+	//k := "ii0"
+	//err := db.Del(k)
+	//if err != nil {
+	//	fmt.Println("---->Del", k, err.Error())
+	//}
+	//
+	//for i := 0; i < 10; i++ {
+	//	k := fmt.Sprintf("ii%d", i)
+	//	v, err := db.Get(k)
+	//	if err != nil {
+	//		fmt.Println("---->Get", k, err.Error())
+	//	}
+	//	fmt.Println("---->Get", k, string(v))
+	//}
 
 }
 func Test_decode(t *testing.T) {

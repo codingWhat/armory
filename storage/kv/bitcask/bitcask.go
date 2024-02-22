@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var maxPerFile = 30
+var maxPerFile = 4 * 100 // 4K
 
 type PosInfo struct {
 	FileID int
@@ -29,6 +29,64 @@ type DB struct {
 	index      map[string]*PosInfo
 	sync.RWMutex
 	dir string
+}
+
+func (db *DB) merge() {
+	err := filepath.Walk(db.dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println("遍历目录失败:", err)
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		if strings.HasPrefix(info.Name(), "archive") {
+			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR, 0600)
+			if err != nil {
+				panic(err)
+			}
+			fileId := pluckFileID(info.Name())
+			newBakName := db.dir + info.Name() + "bak"
+			f1, err := os.OpenFile(newBakName, os.O_CREATE|os.O_RDWR, 0600)
+			if err != nil {
+				panic(err)
+			}
+
+			var offset int64 = 0
+			var buff bytes.Buffer
+			for {
+				e, err := decode(f)
+				if err == io.EOF {
+					break
+				}
+
+				pos := db.index[string(e.Key)]
+				if pos.FileID != fileId || pos.Offset != offset {
+					continue
+				}
+
+				buff.Write(encode(e).Bytes())
+				offset += int64(e.Size())
+			}
+			if buff.Len() == 0 {
+				os.Remove(db.dir + info.Name())
+				os.Remove(newBakName)
+			} else {
+				_, _ = f1.Write(buff.Bytes())
+				os.Rename(db.dir+info.Name(), db.dir+info.Name()+"dep")
+				if err = os.Rename(newBakName, db.dir+info.Name()); err == nil {
+					os.Remove(db.dir + info.Name() + "dep")
+				}
+				os.Rename(newBakName, db.dir+info.Name())
+			}
+
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (db *DB) activeFileName() string {
@@ -56,6 +114,7 @@ func isDirOrCreate(path string) bool {
 			if err != nil {
 				panic(err)
 			}
+			return true
 		} else {
 			panic(err)
 		}
@@ -90,8 +149,11 @@ func (db *DB) loadArchive() {
 			fmt.Println("遍历目录失败:", err)
 			return err
 		}
+		if info.IsDir() {
+			return nil
+		}
 		if strings.HasPrefix(info.Name(), "archive") {
-			f, err := os.OpenFile(info.Name(), os.O_RDWR, 0600)
+			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR, 0600)
 			if err != nil {
 				panic(err)
 			}
@@ -124,7 +186,7 @@ func (db *DB) loadActive() {
 		}
 		if strings.HasPrefix(info.Name(), "active") {
 
-			f, err := os.OpenFile(info.Name(), os.O_RDWR, 0600)
+			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR, 0600)
 			if err != nil {
 				panic(err)
 			}
@@ -169,7 +231,7 @@ func (db *DB) Put(k string, v []byte) error {
 	db.Lock()
 	defer db.Unlock()
 
-	entry := NewEntry([]byte(k), v)
+	entry := NewPutEntry([]byte(k), v)
 	record := encode(entry).Bytes()
 	//如果超出当前活跃文件大小，则归档当前活跃文件
 	offset := db.activeSize
@@ -187,6 +249,30 @@ func (db *DB) Put(k string, v []byte) error {
 		return err
 	}
 	db.index[k] = &PosInfo{FileID: fileId, Offset: offset}
+	db.activeSize += int64(entry.Size())
+	return nil
+}
+
+func (db *DB) Del(k string) error {
+	db.Lock()
+	defer db.Unlock()
+	_, ok := db.index[k]
+	if !ok {
+		return errors.New("key not exist")
+	}
+	entry := NewDelEntry([]byte(k))
+	record := encode(entry).Bytes()
+	//如果超出当前活跃文件大小，则归档当前活跃文件
+	if db.activeSize+int64(entry.Size()) > int64(maxPerFile) {
+		db.archive()
+		db.openActive()
+	}
+	_, err := db.active.Write(record)
+	if err != nil {
+		return err
+	}
+
+	delete(db.index, k)
 	db.activeSize += int64(entry.Size())
 	return nil
 }
@@ -232,12 +318,16 @@ func (db *DB) Get(k string) ([]byte, error) {
 
 func decode(reader io.Reader) (*Entry, error) {
 	e := &Entry{}
-	header := make([]byte, 16)
+	header := make([]byte, headerSize)
 	_, err := reader.Read(header)
 	if err != nil {
 		return nil, err
 	}
 	buffer := bytes.NewBuffer(header)
+	err = binary.Read(buffer, binary.LittleEndian, &e.Type)
+	if err != nil {
+		return nil, err
+	}
 	err = binary.Read(buffer, binary.LittleEndian, &e.CRC)
 	if err != nil {
 		return nil, err
@@ -257,13 +347,13 @@ func decode(reader io.Reader) (*Entry, error) {
 	return e, err
 }
 
-var headerSize = 16 //4 + 4 + 4 + 4
+var headerSize = 17 //1+4 + 4 + 4 + 4
 
 func encode(e *Entry) *bytes.Buffer {
 	size := headerSize + len(e.Key) + len(e.Value)
 	buffer := bytes.NewBuffer(make([]byte, 0, size))
 	crc := crc32.ChecksumIEEE(e.Value)
-
+	binary.Write(buffer, binary.LittleEndian, e.Type)
 	binary.Write(buffer, binary.LittleEndian, crc)
 	binary.Write(buffer, binary.LittleEndian, e.TS)
 	binary.Write(buffer, binary.LittleEndian, int32(len(e.Key)))
@@ -275,12 +365,30 @@ func encode(e *Entry) *bytes.Buffer {
 }
 
 type Entry struct {
+	Type      int8
 	CRC       uint32
 	TS        int32
 	KeySize   int32
 	ValueSize int32
 	Key       []byte
 	Value     []byte
+}
+
+var (
+	EntryTypePut = 1
+	EntryTypeDel = 2
+)
+
+func NewPutEntry(key []byte, value []byte) *Entry {
+	e := NewEntry(key, value)
+	e.Type = int8(EntryTypePut)
+	return e
+}
+
+func NewDelEntry(key []byte) *Entry {
+	e := NewEntry(key, nil)
+	e.Type = int8(EntryTypeDel)
+	return e
 }
 
 func NewEntry(key []byte, value []byte) *Entry {
