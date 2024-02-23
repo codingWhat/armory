@@ -2,6 +2,9 @@
 
 重点实现bitcask思想
 
+- 一致性 WAL
+- 顺序IO
+- 内存中存储数据的在磁盘的索引位置，直接一次io读取数据
 ####  介绍
 [论文地址](https://riak.com/assets/bitcask-intro.pdf)
 

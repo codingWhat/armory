@@ -2,20 +2,24 @@ package bitcask
 
 import (
 	"bytes"
-	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
-var maxPerFile = 4 * 100 // 4K
+var (
+	maxPerFile      = 4 * 100 // 4K
+	ErrKeyNoExist   = errors.New("key not exists")
+	ErrKeyNotInDisk = errors.New("key is not in disk")
+)
 
 type PosInfo struct {
 	FileID int
@@ -25,8 +29,8 @@ type PosInfo struct {
 type DB struct {
 	active     *os.File
 	activeSize int64
-	archives   map[int]*os.File
-	index      map[string]*PosInfo
+	Archives   map[int]*os.File
+	Index      map[string]*PosInfo
 	sync.RWMutex
 	dir string
 }
@@ -34,45 +38,81 @@ type DB struct {
 func (db *DB) merge() {
 	err := filepath.Walk(db.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			fmt.Println("遍历目录失败:", err)
-			return err
+			fmt.Println("megre-遍历目录失败:", err)
+			//return err
+			return nil
 		}
 		if info.IsDir() {
 			return nil
 		}
 
 		if strings.HasPrefix(info.Name(), "archive") {
-			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR, 0600)
+			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR|os.O_APPEND, 0600)
 			if err != nil {
 				panic(err)
 			}
 			fileId := pluckFileID(info.Name())
 			newBakName := db.dir + info.Name() + "bak"
-			f1, err := os.OpenFile(newBakName, os.O_CREATE|os.O_RDWR, 0600)
+			f1, err := os.OpenFile(newBakName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
 			if err != nil {
 				panic(err)
 			}
 
-			var offset int64 = 0
-			var buff bytes.Buffer
+			var (
+				offset    int64 = 0
+				buff      bytes.Buffer
+				indexes         = make(map[string]*PosInfo)
+				newOffset int64 = 0
+			)
 			for {
-				e, err := decode(f)
+				e, err := Decode(f)
 				if err == io.EOF {
+					fmt.Println("---->Decode EOf", offset, f.Name())
 					break
 				}
 
-				pos := db.index[string(e.Key)]
-				if pos.FileID != fileId || pos.Offset != offset {
+				//被删除
+				if e.Type == int8(EntryTypeDel) {
+					offset += int64(e.Size())
 					continue
 				}
 
-				buff.Write(encode(e).Bytes())
+				pos, ok := db.Index[string(e.Key)]
+				fmt.Println("---->fileID", fileId, f.Name(), string(e.Key), e.Type, pos, ok, offset)
+				if !ok {
+					offset += int64(e.Size())
+					continue
+				}
+
+				if pos.FileID != fileId || pos.Offset != offset {
+					offset += int64(e.Size())
+					continue
+				}
+
+				indexes[string(e.Key)] = &PosInfo{
+					FileID: fileId,
+					Offset: newOffset,
+				}
+				newOffset += int64(e.Size())
+				n, err := buff.Write(encode(e).Bytes())
+				fmt.Println("---->buff.Write", f.Name(), n, err, buff.Len())
 				offset += int64(e.Size())
 			}
 			if buff.Len() == 0 {
+				//fmt.Println("Remove---->", fileId, f.Name(), buff.Len(), db.dir+info.Name(), newBakName)
 				os.Remove(db.dir + info.Name())
 				os.Remove(newBakName)
+				os.Remove(db.dir + "hint_" + strconv.Itoa(fileId))
 			} else {
+				hintName := db.dir + "hint_" + strconv.Itoa(fileId)
+				hintFile, err := os.OpenFile(hintName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
+				if err != nil {
+					panic(err)
+				}
+				//简单处理，hint数据json存储
+				hintData, _ := json.Marshal(indexes)
+				_, _ = hintFile.Write(hintData)
+				//数据写入新文件
 				_, _ = f1.Write(buff.Bytes())
 				os.Rename(db.dir+info.Name(), db.dir+info.Name()+"dep")
 				if err = os.Rename(newBakName, db.dir+info.Name()); err == nil {
@@ -80,7 +120,6 @@ func (db *DB) merge() {
 				}
 				os.Rename(newBakName, db.dir+info.Name())
 			}
-
 		}
 		return nil
 	})
@@ -100,11 +139,13 @@ func (db *DB) archivePath() string {
 
 func (db *DB) archive() {
 	fileID := pluckFileID(db.active.Name())
-	db.archives[fileID] = db.active
 	name := fmt.Sprintf("archive_%d", fileID)
 	_ = os.Rename(db.active.Name(), db.archivePath()+name)
-
-	fmt.Println("archive----->", db.active.Name(), db.archivePath()+db.activeFileName())
+	file, err := os.OpenFile(db.archivePath()+name, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
+	if err != nil {
+		panic(err)
+	}
+	db.Archives[fileID] = file
 }
 func isDirOrCreate(path string) bool {
 	fileInfo, err := os.Stat(path)
@@ -131,8 +172,8 @@ func Open(dir string) *DB {
 
 	db := &DB{dir: dir}
 
-	db.index = make(map[string]*PosInfo)
-	db.archives = make(map[int]*os.File)
+	db.Index = make(map[string]*PosInfo)
+	db.Archives = make(map[int]*os.File)
 
 	db.loadArchive()
 	db.loadActive()
@@ -144,6 +185,11 @@ func Open(dir string) *DB {
 }
 
 func (db *DB) loadArchive() {
+
+	var (
+		fileNames     []string
+		hintFileNames []string
+	)
 	err := filepath.Walk(db.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Println("遍历目录失败:", err)
@@ -152,29 +198,57 @@ func (db *DB) loadArchive() {
 		if info.IsDir() {
 			return nil
 		}
-		if strings.HasPrefix(info.Name(), "archive") {
-			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR, 0600)
-			if err != nil {
-				panic(err)
-			}
-			db.archives[pluckFileID(info.Name())] = f
-			var offset int64 = 0
-			for {
-				e, err := decode(f)
-				if err == io.EOF {
-					break
-				}
-				db.index[string(e.Key)] = &PosInfo{
-					FileID: pluckFileID(info.Name()), Offset: offset,
-				}
-				offset += int64(e.Size())
-			}
+		//optimize: load the hint file to speed up the start-up
+		if strings.HasPrefix(info.Name(), "hint") {
+			hintFileNames = append(hintFileNames, info.Name())
+			//直接加载archive文件
+		} else if strings.HasPrefix(info.Name(), "archive") {
+			fileNames = append(fileNames, info.Name())
 		}
 		return nil
 	})
-
 	if err != nil {
 		panic(err)
+	}
+
+	if len(hintFileNames) > 0 {
+		sort.Strings(hintFileNames)
+
+		for _, fileName := range hintFileNames {
+			f, err := os.OpenFile(db.dir+fileName, os.O_RDWR|os.O_APPEND, 0600)
+			if err != nil {
+				panic(err)
+			}
+			all, err := ioutil.ReadAll(f)
+			if err != nil {
+				panic(err)
+			}
+			indexes := make(map[string]*PosInfo)
+			_ = json.Unmarshal(all, &indexes)
+			for k, posInfo := range indexes {
+				db.Index[k] = posInfo
+			}
+		}
+	}
+
+	sort.Strings(fileNames)
+	for _, fileName := range fileNames {
+		f, err := os.OpenFile(db.dir+fileName, os.O_RDWR|os.O_APPEND, 0600)
+		if err != nil {
+			panic(err)
+		}
+		db.Archives[pluckFileID(fileName)] = f
+		var offset int64 = 0
+		for {
+			e, err := Decode(f)
+			if err == io.EOF {
+				break
+			}
+			db.Index[string(e.Key)] = &PosInfo{
+				FileID: pluckFileID(fileName), Offset: offset,
+			}
+			offset += int64(e.Size())
+		}
 	}
 }
 
@@ -186,22 +260,24 @@ func (db *DB) loadActive() {
 		}
 		if strings.HasPrefix(info.Name(), "active") {
 
-			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR, 0600)
+			f, err := os.OpenFile(db.dir+info.Name(), os.O_RDWR|os.O_APPEND, 0600)
 			if err != nil {
 				panic(err)
 			}
 			db.active = f
 			var offset int64 = 0
 			for {
-				e, err := decode(f)
+				e, err := Decode(f)
 				if err == io.EOF {
 					break
 				}
-				db.index[string(e.Key)] = &PosInfo{
+				db.Index[string(e.Key)] = &PosInfo{
 					FileID: pluckFileID(info.Name()), Offset: offset,
 				}
 				offset += int64(e.Size())
 			}
+			db.activeSize = offset
+
 		}
 		return nil
 	})
@@ -218,12 +294,13 @@ func pluckFileID(name string) int {
 }
 
 func (db *DB) openActive() {
-	newFileName := fmt.Sprintf("active_%d", len(db.archives)+1)
-	file, err := os.OpenFile(db.dir+newFileName, os.O_CREATE|os.O_RDWR, 0600)
+	newFileName := fmt.Sprintf("active_%d", len(db.Archives)+1)
+	file, err := os.OpenFile(db.dir+newFileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
 	if err != nil {
 		panic(err)
 	}
-	db.activeSize = 0
+	currOffset, _ := file.Seek(0, 1)
+	db.activeSize = currOffset
 	db.active = file
 }
 
@@ -248,7 +325,7 @@ func (db *DB) Put(k string, v []byte) error {
 	if err != nil {
 		return err
 	}
-	db.index[k] = &PosInfo{FileID: fileId, Offset: offset}
+	db.Index[k] = &PosInfo{FileID: fileId, Offset: offset}
 	db.activeSize += int64(entry.Size())
 	return nil
 }
@@ -256,9 +333,9 @@ func (db *DB) Put(k string, v []byte) error {
 func (db *DB) Del(k string) error {
 	db.Lock()
 	defer db.Unlock()
-	_, ok := db.index[k]
+	_, ok := db.Index[k]
 	if !ok {
-		return errors.New("key not exist")
+		return ErrKeyNoExist
 	}
 	entry := NewDelEntry([]byte(k))
 	record := encode(entry).Bytes()
@@ -272,7 +349,7 @@ func (db *DB) Del(k string) error {
 		return err
 	}
 
-	delete(db.index, k)
+	delete(db.Index, k)
 	db.activeSize += int64(entry.Size())
 	return nil
 }
@@ -280,9 +357,9 @@ func (db *DB) Del(k string) error {
 func (db *DB) Get(k string) ([]byte, error) {
 	db.RLock()
 	defer db.RUnlock()
-	posInfo, ok := db.index[k]
+	posInfo, ok := db.Index[k]
 	if !ok {
-		return nil, errors.New("key not exist")
+		return nil, ErrKeyNoExist
 	}
 
 	/*
@@ -293,116 +370,48 @@ func (db *DB) Get(k string) ([]byte, error) {
 	fName := posInfo.FileID
 	if fName == pluckFileID(db.active.Name()) {
 		f = db.active
+		//_, err := f.Seek(0, 0)
+		//all, err := io.ReadAll(f)
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		//fmt.Println(f.Name(), "---->active, offset", k,
+		//	all, posInfo.FileID, posInfo.Offset)
 		_, err := f.Seek(posInfo.Offset, 0)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		if len(db.archives) == 0 {
+
+		if len(db.Archives) == 0 {
 			msg := fmt.Sprintf("get data error, key:%s, pos: %+v", k, posInfo)
 			panic(msg)
 		}
-		f = db.archives[posInfo.FileID]
+		f = db.Archives[posInfo.FileID]
+		//_, err := f.Seek(0, 0)
+		//stat, _ := f.Stat()
+		//all, err := io.ReadAll(f)
+		//if err != nil {
+		//	return nil, err
+		//}
+		//fmt.Println(stat.Name(), stat.Size(), "---->archive, offset", k, all, posInfo.FileID, posInfo.Offset)
+
 		_, err := f.Seek(posInfo.Offset, 0)
+
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	e, err := decode(f)
+	//fmt.Println("----> ready to Decode, ", db.Archives, curOffset)
+	e, err := Decode(f)
 	if err == io.EOF {
-		return nil, errors.New("key is not in disk")
+		return nil, ErrKeyNotInDisk
+	}
+	if err != nil {
+		return nil, err
 	}
 	return e.Value, nil
-}
 
-func decode(reader io.Reader) (*Entry, error) {
-	e := &Entry{}
-	header := make([]byte, headerSize)
-	_, err := reader.Read(header)
-	if err != nil {
-		return nil, err
-	}
-	buffer := bytes.NewBuffer(header)
-	err = binary.Read(buffer, binary.LittleEndian, &e.Type)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Read(buffer, binary.LittleEndian, &e.CRC)
-	if err != nil {
-		return nil, err
-	}
-	binary.Read(buffer, binary.LittleEndian, &e.TS)
-	binary.Read(buffer, binary.LittleEndian, &e.KeySize)
-	binary.Read(buffer, binary.LittleEndian, &e.ValueSize)
-
-	kv := make([]byte, e.KeySize+e.ValueSize)
-	_, err = reader.Read(kv)
-	if err != nil {
-		return nil, err
-	}
-
-	e.Key = kv[:e.KeySize]
-	e.Value = kv[e.KeySize:]
-	return e, err
-}
-
-var headerSize = 17 //1+4 + 4 + 4 + 4
-
-func encode(e *Entry) *bytes.Buffer {
-	size := headerSize + len(e.Key) + len(e.Value)
-	buffer := bytes.NewBuffer(make([]byte, 0, size))
-	crc := crc32.ChecksumIEEE(e.Value)
-	binary.Write(buffer, binary.LittleEndian, e.Type)
-	binary.Write(buffer, binary.LittleEndian, crc)
-	binary.Write(buffer, binary.LittleEndian, e.TS)
-	binary.Write(buffer, binary.LittleEndian, int32(len(e.Key)))
-	binary.Write(buffer, binary.LittleEndian, int32(len(e.Value)))
-	buffer.Write(e.Key)
-	buffer.Write(e.Value)
-
-	return buffer
-}
-
-type Entry struct {
-	Type      int8
-	CRC       uint32
-	TS        int32
-	KeySize   int32
-	ValueSize int32
-	Key       []byte
-	Value     []byte
-}
-
-var (
-	EntryTypePut = 1
-	EntryTypeDel = 2
-)
-
-func NewPutEntry(key []byte, value []byte) *Entry {
-	e := NewEntry(key, value)
-	e.Type = int8(EntryTypePut)
-	return e
-}
-
-func NewDelEntry(key []byte) *Entry {
-	e := NewEntry(key, nil)
-	e.Type = int8(EntryTypeDel)
-	return e
-}
-
-func NewEntry(key []byte, value []byte) *Entry {
-	crc := crc32.ChecksumIEEE(value)
-	return &Entry{
-		CRC:       crc,
-		TS:        int32(time.Now().Unix()),
-		KeySize:   int32(len(key)),
-		ValueSize: int32(len(value)),
-		Key:       key,
-		Value:     value}
-
-}
-
-func (e *Entry) Size() int32 {
-	return int32(headerSize + len(e.Key) + len(e.Value))
+	//return nil, nil
 }
