@@ -3,6 +3,7 @@ package bitcask
 import (
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -110,4 +111,5 @@ func Test_bitCask_Merge(t *testing.T) {
 		fmt.Println("[2]---->Get-ok", k, string(v), err)
 	}
 
+	os.RemoveAll("./data/")
 }
