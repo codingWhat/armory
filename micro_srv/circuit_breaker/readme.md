@@ -12,6 +12,8 @@ from : https://sentinelguard.io/zh-cn/docs/golang/circuit-breaking.html
 
 现代微服务架构基本都是分布式的，整个分布式系统由非常多的微服务组成。不同服务之间相互调用，组成复杂的调用链路。前面描述的问题在分布式链路调用中会产生放大的效果。整个复杂链路中的某一环如果不稳定，就可能会层层级联，最终可能导致整个链路全部挂掉。因此我们需要对不稳定的 弱依赖服务调用 进行 熔断降级，暂时切断不稳定的服务调用，避免局部不稳定因素导致整个分布式系统的雪崩。熔断降级作为保护服务自身的手段，通常在客户端（调用端）进行配置。
 
+通常来说熔断在主调进行，会熔断不重要的服务，保护自身服务。如果熔断失败了，主调可以通过负载均衡的failover策略请求下一个可用节点。
+
 # 熔断器模型
 ___
 
@@ -77,19 +79,6 @@ ___
 			e.Exit()
 		}
 	}
-	_, err = circuitbreaker.LoadRules([]*circuitbreaker.Rule{
-		// Statistic time span=5s, recoveryTimeout=3s, slowRtUpperBound=50ms, maxSlowRequestRatio=50%
-		{
-			Resource:                     "abc", 
-			Strategy:                     circuitbreaker.SlowRequestRatio, // 
-			RetryTimeoutMs:               3000, // 
-			MinRequestAmount:             10,   // 
-			StatIntervalMs:               5000, //窗口的统计周期
-			StatSlidingWindowBucketCount: 10, //窗口中的桶个数
-			MaxAllowedRtMs:               50, // 半打开状态下，临界的响应时间
-			Threshold:                    0.5, // 
-		},
-	})
 ```
 - closed: 关闭状态: 如果小于<minRequestAmount 不改变状态
 - half-open: probeNumber: 半打开状态下必须要满足这个值，比如说成功请求probeNumber次才能切换成关闭状态，有一个失败之后直接切为open.

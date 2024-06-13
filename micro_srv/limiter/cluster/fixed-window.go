@@ -1,17 +1,22 @@
-package cl
+package main
 
 import (
-	"context"
 	"fmt"
+
 	"github.com/gomodule/redigo/redis"
 	"time"
 )
 
-type ClusterLimiter struct {
+import (
+	"context"
+)
+
+// FixedWindow 强一致分布式限流
+type FixedWindow struct {
 	pool *redis.Pool
 }
 
-func NewClusterLimiter() *ClusterLimiter {
+func NewFixedWindow() *FixedWindow {
 	var (
 		readTimeout  = time.Second
 		writeTimeout = time.Second
@@ -39,10 +44,10 @@ func NewClusterLimiter() *ClusterLimiter {
 			return err
 		},
 	}
-	return &ClusterLimiter{pool: p}
+	return &FixedWindow{pool: p}
 }
 
-func (cl *ClusterLimiter) Allow(ctx context.Context, key string, limit int, duration ...time.Duration) (bool, error) {
+func (cl *FixedWindow) Allow(ctx context.Context, key string, limit int, duration ...time.Duration) (bool, error) {
 	var (
 		expireTime time.Duration
 		freezeTime time.Duration
