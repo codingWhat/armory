@@ -38,6 +38,8 @@ func (s *SmoothWeightedRoundRobin) Add(node *Node) bool {
 func (s *SmoothWeightedRoundRobin) Select() string {
 
 	var maxNode *Node
+	//对每个节点计算权重(初始权重+当前权重)，取出最大权重的那个节点，并重新计算其权重
+	//计算公式: 当前权重-所有节点权重和
 	for _, node := range s.nodes {
 		node.CurWeight = node.CurWeight + node.Weight
 		if maxNode == nil {
