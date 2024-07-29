@@ -1,4 +1,4 @@
-package limiter
+package static
 
 import (
 	"fmt"
@@ -6,10 +6,8 @@ import (
 	"time"
 )
 
-func TestFixedWindow_Allow(t *testing.T) {
-
-	fw := NewFixedWindow(1*time.Second, 3)
-
+func TestSlideWindow_Allow(t *testing.T) {
+	fw := NewSlideWindow(1*time.Second, 3)
 	for i := 0; i < 15; i++ {
 		now := time.Now().Format("15:04:05")
 		if fw.Allow() {

@@ -1,4 +1,4 @@
-package limiter
+package static
 
 import (
 	"fmt"
@@ -8,8 +8,8 @@ import (
 
 func TestTokenBucket_Allow(t *testing.T) {
 
-	tb := NewTokenBucket(2.0, 3.0)
-	for i := 0; i <= 15; i++ {
+	tb := NewTokenBucket(2.0, 1.0)
+	for i := 0; i <= 35; i++ {
 		now := time.Now().Format("15:04:05")
 		if tb.Allow() {
 			fmt.Println(i, now+"请求通过")
