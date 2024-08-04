@@ -23,18 +23,24 @@ type Policy interface {
 	batchRenew([]*list.Element)
 }
 
-type LRU struct {
-	ll    *list.List
-	store store
+func newLRU(size int) *lru {
+	return &lru{
+		ll:   list.New(),
+		size: size,
+	}
+}
+
+type lru struct {
+	ll *list.List
 
 	size int
 }
 
-func (l *LRU) isFull() bool {
+func (l *lru) isFull() bool {
 	return l.ll.Len() >= l.size
 }
 
-func (l *LRU) add(e *entry) (*list.Element, *list.Element) {
+func (l *lru) add(e *entry) (*list.Element, *list.Element) {
 	if l.ll.Len() < l.size {
 		return l.ll.PushFront(e), nil
 	}
@@ -51,7 +57,7 @@ func getEntry(ele *list.Element) *entry {
 	return ele.Value.(*entry)
 }
 
-func (l *LRU) update(e *entry, ele *list.Element) {
+func (l *lru) update(e *entry, ele *list.Element) {
 
 	old := getEntry(ele)
 	old.val = e.val
@@ -59,15 +65,15 @@ func (l *LRU) update(e *entry, ele *list.Element) {
 	l.ll.MoveToFront(ele)
 
 }
-func (l *LRU) remove(element *list.Element) {
+func (l *lru) remove(element *list.Element) {
 	l.ll.Remove(element)
 }
 
-func (l *LRU) renew(element *list.Element) {
+func (l *lru) renew(element *list.Element) {
 	l.ll.MoveToFront(element)
 }
 
-func (l *LRU) batchRenew(elements []*list.Element) {
+func (l *lru) batchRenew(elements []*list.Element) {
 	for _, elem := range elements {
 		l.ll.MoveToFront(elem)
 	}

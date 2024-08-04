@@ -3,6 +3,7 @@ package localcache
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -27,6 +28,22 @@ type entExtendFunc struct {
 type keyExtendFunc struct {
 	key     string
 	afterDo func()
+}
+
+func New(size int) Cache {
+	c := &cache{
+		store:       newShardedMap(),
+		ekt:         newExpireKeyTimers(time.Second, 60),
+		policy:      newLRU(size),
+		isSync:      true,
+		setTimeout:  1 * time.Second,
+		updateEvtCh: make(chan *entExtendFunc, 1),
+		addEvtCh:    make(chan *entExtendFunc, 100),
+		delEvtCh:    make(chan *keyExtendFunc, 1),
+	}
+
+	go c.evtProcessor()
+	return c
 }
 
 type cache struct {
@@ -72,21 +89,32 @@ func (c *cache) del(key string) {
 	}
 	c.policy.remove(val.(*list.Element))
 	c.store.del(key)
+	c.ekt.remove(key)
+}
 
-	//todo remove timers
+func (c *cache) expireTask(k string) func() {
+	return func() {
+		c.store.del(k)
+		fmt.Println(k, "expireTask--->", time.Now().Format("2006-01-02 15:04:05"))
+		c.delEvtCh <- &keyExtendFunc{key: k, afterDo: nil}
+	}
 }
 
 func (c *cache) add(e *entry) {
 
 	add, victim := c.policy.add(e)
+
 	if add == nil && victim == nil {
 		return
 	}
 
 	c.store.set(e.key, add)
+	c.ekt.set(e.key, e.expireAt.Sub(time.Now()), c.expireTask(e.key))
+	fmt.Println("add--->", add, victim, e.expireAt.Format("2006-01-02 15:04:05"))
 	if victim != nil {
-		c.store.del(getEntry(victim).key)
-		//todo remove timers
+		k := getEntry(victim).key
+		c.store.del(k)
+		c.ekt.remove(k)
 	}
 }
 
@@ -96,7 +124,8 @@ func (c *cache) update(e *entry) {
 	if ok {
 		ele := val.(*list.Element)
 		c.policy.update(e, ele)
-		//todo update timers
+		c.ekt.remove(k)
+		c.ekt.set(e.key, e.expireAt.Sub(time.Now()), c.expireTask(e.key))
 	}
 }
 
@@ -183,12 +212,13 @@ func (c *cache) Del(k string) {
 
 func (c *cache) Get(k string) (any, error) {
 	v, exists := c.store.get(k)
+	fmt.Println(v, exists, "GEt--->", time.Now().Format("2006-01-02 15:04:05"))
 	if exists {
 		ele := v.(*list.Element)
 		ent := getEntry(ele)
 		ent.mu.Lock()
 		defer ent.mu.Unlock()
-		if time.Now().Before(ent.expireAt) {
+		if time.Now().After(ent.expireAt) {
 			return nil, ErrKeyIsExpired
 		}
 

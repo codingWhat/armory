@@ -33,6 +33,13 @@ func (eq *expireKeyTimers) set(key string, d time.Duration, f func()) {
 	eq.mu.Unlock()
 }
 
+func (eq *expireKeyTimers) get(key string) *timingwheel.Timer {
+	eq.mu.Lock()
+	defer eq.mu.Unlock()
+	return eq.timers[key]
+
+}
+
 func (eq *expireKeyTimers) remove(key string) {
 	eq.mu.Lock()
 	if timer, ok := eq.timers[key]; ok {
