@@ -45,7 +45,7 @@ func TestCache_Add(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c.Add(tt.args.key, tt.args.val)
+			c.Set(tt.args.key, tt.args.val)
 		})
 	}
 

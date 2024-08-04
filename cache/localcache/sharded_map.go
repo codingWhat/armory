@@ -23,10 +23,16 @@ func (sm *safeMap) set(k string, v any) {
 	sm.mu.Unlock()
 }
 func (sm *safeMap) get(k string) (any, bool) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
 	v, ok := sm.data[k]
 	return v, ok
+}
+
+func (sm *safeMap) len() uint64 {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return uint64(len(sm.data))
 }
 
 func (sm *safeMap) del(k string) {
@@ -45,6 +51,7 @@ type store interface {
 	set(k string, v any)
 	get(k string) (any, bool)
 	del(k string)
+	len() uint64
 	clear()
 }
 
@@ -66,7 +73,15 @@ func (s *shardedMap) del(k string) {
 	s.shards[xxhash.Sum64String(k)%shardsNum].del(k)
 }
 
-func (s *shardedMap) clear(k string) {
+func (s *shardedMap) len() uint64 {
+	var length uint64
+	for _, sm := range s.shards {
+		length += sm.len()
+	}
+	return length
+}
+
+func (s *shardedMap) clear() {
 	for _, shard := range s.shards {
 		shard.clear()
 	}

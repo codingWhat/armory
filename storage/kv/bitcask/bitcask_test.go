@@ -20,7 +20,7 @@ func Test_bitCask(t *testing.T) {
 	k := "ii0"
 	err := db.Del(k)
 	if err != nil {
-		fmt.Println("---->Del", k, err.Error())
+		fmt.Println("---->del", k, err.Error())
 	}
 
 	_, err = db.Get(k)

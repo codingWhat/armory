@@ -3,6 +3,7 @@ package lru
 import (
 	"container/list"
 	"errors"
+	"sync"
 )
 
 type Cache struct {
@@ -10,6 +11,7 @@ type Cache struct {
 	currSize int64
 	ll       *list.List
 	items    map[string]*entry
+	sync.RWMutex
 }
 
 func (c *Cache) removeOldest() {
@@ -23,6 +25,8 @@ func (c *Cache) removeOldest() {
 }
 
 func (c *Cache) Get(key string) (Value, error) {
+	c.RWMutex.RLock()
+	defer c.RWMutex.RUnlock()
 	if node, ok := c.items[key]; ok {
 		c.ll.PushFront(node)
 		return node.value, nil
@@ -31,7 +35,9 @@ func (c *Cache) Get(key string) (Value, error) {
 	return nil, errors.New("no exists")
 }
 
-func (c *Cache) Add(key string, val Value) {
+func (c *Cache) Set(key string, val Value) {
+	c.RWMutex.Lock()
+	defer c.RWMutex.Unlock()
 	//如果存在，移到对头，更新value，currSize
 	if e, ok := c.items[key]; ok {
 		c.currSize += val.Len() - e.value.Len()

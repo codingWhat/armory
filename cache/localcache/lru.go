@@ -2,6 +2,7 @@ package localcache
 
 import (
 	"container/list"
+	"sync"
 	"time"
 )
 
@@ -9,11 +10,14 @@ type entry struct {
 	key      string
 	val      any
 	expireAt time.Time
+
+	mu sync.RWMutex
 }
 
 type Policy interface {
 	isFull() bool
 	add(*entry) (*list.Element, *list.Element) // 返回新增，淘汰的entry
+	remove(*list.Element)
 	update(*entry, *list.Element)
 	renew(*list.Element)
 	batchRenew([]*list.Element)
@@ -54,6 +58,9 @@ func (l *LRU) update(e *entry, ele *list.Element) {
 	old.expireAt = e.expireAt
 	l.ll.MoveToFront(ele)
 
+}
+func (l *LRU) remove(element *list.Element) {
+	l.ll.Remove(element)
 }
 
 func (l *LRU) renew(element *list.Element) {
