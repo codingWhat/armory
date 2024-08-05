@@ -3,7 +3,6 @@ package localcache
 import (
 	"container/list"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -30,27 +29,37 @@ type keyExtendFunc struct {
 	afterDo func()
 }
 
-func New(size int) Cache {
+func New(ops ...Option) Cache {
 	c := &cache{
+		size:        100,
 		store:       newShardedMap(),
 		ekt:         newExpireKeyTimers(time.Second, 60),
-		policy:      newLRU(size),
-		isSync:      true,
-		setTimeout:  1 * time.Second,
-		updateEvtCh: make(chan *entExtendFunc, 1),
-		addEvtCh:    make(chan *entExtendFunc, 100),
-		delEvtCh:    make(chan *keyExtendFunc, 1),
+		updateEvtCh: make(chan *entExtendFunc, 1024),
+		addEvtCh:    make(chan *entExtendFunc, 1024),
+		delEvtCh:    make(chan *keyExtendFunc, 1024),
+		accessEvtCh: make(chan []*list.Element, 1024),
 	}
+
+	for _, op := range ops {
+		op(c)
+	}
+
+	c.accessUniqBuffer = newUniqRingBuffer(c, 3)
+	c.policy = newPolicy(c.size)
 
 	go c.evtProcessor()
 	return c
 }
 
 type cache struct {
-	store  store
-	policy Policy
-	ekt    *expireKeyTimers
+	size int
 
+	store            store
+	policy           Policy
+	ekt              *expireKeyTimers
+	accessUniqBuffer *uniqRingBuffer
+
+	accessEvtCh chan []*list.Element //需要合并
 	updateEvtCh chan *entExtendFunc
 	addEvtCh    chan *entExtendFunc
 	delEvtCh    chan *keyExtendFunc
@@ -59,30 +68,44 @@ type cache struct {
 	setTimeout time.Duration
 }
 
+func (c *cache) consume(elements []*list.Element) {
+	select {
+	case c.accessEvtCh <- elements:
+	default:
+		//如果阻塞，直接丢弃
+		return
+	}
+}
+
+func (c *cache) access(elements []*list.Element) {
+	c.policy.batchRenew(elements)
+}
+
 func (c *cache) evtProcessor() {
 	for {
 		select {
-		case wf := <-c.addEvtCh:
-			c.add(wf.ent)
-			if wf.afterDo != nil {
-				wf.afterDo()
+		case elements := <-c.accessEvtCh:
+			c.access(elements)
+		case ef := <-c.addEvtCh:
+			c.add(ef.ent)
+			if ef.afterDo != nil {
+				ef.afterDo()
 			}
-		case wf := <-c.updateEvtCh:
-			c.update(wf.ent)
-			if wf.afterDo != nil {
-				wf.afterDo()
+		case ef := <-c.updateEvtCh:
+			c.update(ef.ent)
+			if ef.afterDo != nil {
+				ef.afterDo()
 			}
-		case wf := <-c.delEvtCh:
-			c.del(wf.key)
-			if wf.afterDo != nil {
-				wf.afterDo()
+		case ef := <-c.delEvtCh:
+			c.del(ef.key)
+			if ef.afterDo != nil {
+				ef.afterDo()
 			}
 		}
 	}
 }
 
 func (c *cache) del(key string) {
-
 	val, ok := c.store.get(key)
 	if !ok {
 		return
@@ -95,7 +118,6 @@ func (c *cache) del(key string) {
 func (c *cache) expireTask(k string) func() {
 	return func() {
 		c.store.del(k)
-		fmt.Println(k, "expireTask--->", time.Now().Format("2006-01-02 15:04:05"))
 		c.delEvtCh <- &keyExtendFunc{key: k, afterDo: nil}
 	}
 }
@@ -103,14 +125,12 @@ func (c *cache) expireTask(k string) func() {
 func (c *cache) add(e *entry) {
 
 	add, victim := c.policy.add(e)
-
 	if add == nil && victim == nil {
 		return
 	}
 
 	c.store.set(e.key, add)
 	c.ekt.set(e.key, e.expireAt.Sub(time.Now()), c.expireTask(e.key))
-	fmt.Println("add--->", add, victim, e.expireAt.Format("2006-01-02 15:04:05"))
 	if victim != nil {
 		k := getEntry(victim).key
 		c.store.del(k)
@@ -212,7 +232,6 @@ func (c *cache) Del(k string) {
 
 func (c *cache) Get(k string) (any, error) {
 	v, exists := c.store.get(k)
-	fmt.Println(v, exists, "GEt--->", time.Now().Format("2006-01-02 15:04:05"))
 	if exists {
 		ele := v.(*list.Element)
 		ent := getEntry(ele)
@@ -221,7 +240,7 @@ func (c *cache) Get(k string) (any, error) {
 		if time.Now().After(ent.expireAt) {
 			return nil, ErrKeyIsExpired
 		}
-
+		c.accessUniqBuffer.Push(ele)
 		return ent.val, nil
 	}
 	return nil, ErrKeyNoExists
@@ -233,7 +252,7 @@ func (c *cache) Close() {
 	close(c.addEvtCh)
 	close(c.delEvtCh)
 
-	//todo 关闭timers
+	c.ekt.clear()
 }
 
 func (c *cache) Len() uint64 {

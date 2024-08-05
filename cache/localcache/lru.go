@@ -23,6 +23,10 @@ type Policy interface {
 	batchRenew([]*list.Element)
 }
 
+func newPolicy(size int) Policy {
+	return newLRU(size)
+}
+
 func newLRU(size int) *lru {
 	return &lru{
 		ll:   list.New(),
@@ -44,13 +48,12 @@ func (l *lru) add(e *entry) (*list.Element, *list.Element) {
 	if l.ll.Len() < l.size {
 		return l.ll.PushFront(e), nil
 	}
-	lastEle := l.ll.Back()
-	if lastEle == nil {
+	victim := l.ll.Back()
+	if victim == nil {
 		return nil, nil
 	}
-	l.ll.Remove(lastEle)
-
-	return lastEle, l.ll.PushFront(e)
+	l.ll.Remove(victim)
+	return l.ll.PushFront(e), victim
 }
 
 func getEntry(ele *list.Element) *entry {

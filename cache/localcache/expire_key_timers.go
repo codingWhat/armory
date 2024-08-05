@@ -76,6 +76,5 @@ func newExpireKeyTimers(tick time.Duration, wheelSize int64) *expireKeyTimers {
 	eq.tw = tw
 
 	tw.Start()
-
 	return eq
 }
