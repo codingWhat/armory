@@ -5,9 +5,13 @@ go 1.18
 require (
 	git.code.oa.com/trpc-go/trpc-database/localcache v0.1.11
 	github.com/IBM/sarama v1.43.0
+	github.com/RussellLuo/timingwheel v0.0.0-20191022104228-f534fd34a762
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/alibaba/sentinel-golang v1.0.4
+	github.com/allegro/bigcache/v3 v3.1.0
+	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/confluentinc/confluent-kafka-go v1.9.2
+	github.com/coocood/freecache v1.2.4
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofrs/flock v0.8.1
@@ -15,7 +19,6 @@ require (
 	github.com/google/btree v1.1.2
 	github.com/plar/go-adaptive-radix-tree v1.0.5
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
-	github.com/redis/go-redis/v9 v9.5.3
 	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/stretchr/testify v1.9.0
 	go.etcd.io/bbolt v1.3.9
@@ -26,12 +29,10 @@ require (
 )
 
 require (
-	github.com/RussellLuo/timingwheel v0.0.0-20191022104228-f534fd34a762 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
-	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

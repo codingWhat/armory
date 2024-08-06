@@ -129,6 +129,39 @@ type expireKeyTimers struct {
 	tw        *timingwheel.TimingWheel
 }
 ```
+### hash函数选型
+fnv64 vs xxhash
+测试机器: mac-m1, go benchmark结果
+
+| hash函数 | fnv64a  | xxhash  |
+|--------|---------|---------|
+| 8字节    | 5.130 ns/op | 8.817 ns/op |
+| 16字节   | 7.928 ns/op|   7.464 ns/op |
+| 32字节   | 17.17 ns/op  | 14.22 ns/op|
 
 
+### 高性能优化
+#### 写操作
+<strong>隔离:</strong>  按channel隔离增、删、改  
+<strong>同步转异步:</strong>  链表并发写操作，改为异步单协程更新
+<strong>支持非阻塞</strong>
 
+#### 读操作
+<strong>批量操作:</strong> 采用ringbuffer，批量更新链表
+
+#### 内存优化
+采用sync.Pool池化ringbuffer对象，避免频繁创建对象
+
+### 压测对比
+| 压测case                                              | 操作次数      | 单次耗时                |
+|-----------------------------------------------------|-----------|---------------------|
+| BenchmarkSyncMapSetParallelForStruct-10             | 	 1330215 | 	       907.6 ns/op |
+| BenchmarkFreeCacheSetParallelForStruct-10           | 	 2191702 | 	       549.8 ns/op |
+| BenchmarkBigCacheSetParallelForStruct-10            | 	 2250765 | 	       528.6 ns/op |
+| <strong>BenchmarkLCSetParallelForStruct-10</strong> | 	  590721 | 	      2114 ns/op   |
+| BenchmarkSyncMapGetParallelForStruct-10             |      	 3960368|	       313.6 ns/op|
+| BenchmarkFreeCacheGetParallelForStruct-10           |    	 2146406|	       545.5 ns/op|
+| BenchmarkBigCacheGetParallelForStruct-10            |     	 2329698|	       516.4 ns/op|
+| <strong>BenchmarkLCGetParallelForStruct-10</strong> |           	 2386426|	       475.1 ns/op|
+
+经过压测分析，在写入数据由于我们采用的是同步模式，对比其他库有一些弱势，但是在读取时由于不需要序列化操作，相比Zero-Gc要快些。

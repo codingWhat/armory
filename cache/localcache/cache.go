@@ -3,6 +3,7 @@ package localcache
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -38,13 +39,15 @@ func New(ops ...Option) Cache {
 		addEvtCh:    make(chan *entExtendFunc, 1024),
 		delEvtCh:    make(chan *keyExtendFunc, 1024),
 		accessEvtCh: make(chan []*list.Element, 1024),
+		stop:        make(chan struct{}),
 	}
 
 	for _, op := range ops {
 		op(c)
 	}
 
-	c.accessUniqBuffer = newUniqRingBuffer(c, 3)
+	//c.accessRingBuffer = newUniqRingBuffer(c, 10)
+	c.accessRingBuffer = newRingBuffer(c, 3)
 	c.policy = newPolicy(c.size)
 
 	go c.evtProcessor()
@@ -57,23 +60,26 @@ type cache struct {
 	store            store
 	policy           policy
 	ekt              *expireKeyTimers
-	accessUniqBuffer *uniqRingBuffer
+	accessRingBuffer RingBuffer
 
 	accessEvtCh chan []*list.Element //需要合并
 	updateEvtCh chan *entExtendFunc
 	addEvtCh    chan *entExtendFunc
 	delEvtCh    chan *keyExtendFunc
 
+	stop chan struct{}
+
 	isSync     bool
 	setTimeout time.Duration
 }
 
-func (c *cache) consume(elements []*list.Element) {
+func (c *cache) consume(elements []*list.Element) bool {
 	select {
 	case c.accessEvtCh <- elements:
+		return true
 	default:
 		//如果阻塞，直接丢弃
-		return
+		return false
 	}
 }
 
@@ -101,6 +107,9 @@ func (c *cache) evtProcessor() {
 			if ef.afterDo != nil {
 				ef.afterDo()
 			}
+		case <-c.stop:
+			fmt.Println("cache quit")
+			return
 		}
 	}
 }
@@ -240,19 +249,22 @@ func (c *cache) Get(k string) (any, error) {
 		if time.Now().After(ent.expireAt) {
 			return nil, ErrKeyIsExpired
 		}
-		c.accessUniqBuffer.Push(ele)
+		c.accessRingBuffer.Push(ele)
 		return ent.val, nil
 	}
 	return nil, ErrKeyNoExists
 }
 
 func (c *cache) Close() {
+	c.stop <- struct{}{}
 
+	close(c.stop)
 	close(c.updateEvtCh)
 	close(c.addEvtCh)
 	close(c.delEvtCh)
+	close(c.accessEvtCh)
 
-	c.ekt.clear()
+	c.ekt.stop()
 }
 
 func (c *cache) Len() uint64 {

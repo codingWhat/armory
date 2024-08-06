@@ -4,13 +4,13 @@ import (
 	"container/list"
 )
 
-type consumer interface {
-	consume([]*list.Element)
+type ringConsumer interface {
+	consume([]*list.Element) bool
 }
 
 const buffersNum = 256
 
-func newUniqRingBuffer(consumer consumer, consumeThreshold int64) *uniqRingBuffer {
+func newUniqRingBuffer(consumer ringConsumer, consumeThreshold int64) RingBuffer {
 	urb := &uniqRingBuffer{
 		buffers: make([]*UniqBuffer, buffersNum),
 		size:    buffersNum,
@@ -56,7 +56,7 @@ type UniqBuffer struct {
 	accessCnt        int64
 	consumeThreshold int64
 
-	consumer consumer
+	consumer ringConsumer
 }
 
 func (ub *UniqBuffer) reset() {
@@ -67,8 +67,9 @@ func (ub *UniqBuffer) reset() {
 
 func (ub *UniqBuffer) Push(ele *list.Element) bool {
 	if ub.accessCnt >= ub.consumeThreshold {
-		ub.consumer.consume(ub.data)
-		ub.reset()
+		if ub.consumer.consume(ub.data) {
+			ub.reset()
+		}
 		return false
 	}
 

@@ -9,6 +9,7 @@ import (
 
 func Test_cache_LRU(t *testing.T) {
 	c := New(WithCapacity(3), WithSetTimout(1*time.Second))
+	defer c.Close()
 
 	for i := 0; i < 4; i++ {
 		if i == 2 {
@@ -35,6 +36,13 @@ func Test_cache_LRU(t *testing.T) {
 func Test_cache_Set(t *testing.T) {
 
 	c := New(WithCapacity(3), WithSetTimout(1*time.Second))
+	defer c.Close()
+
+	type myStruct struct {
+		Id int
+	}
+
+	m := &myStruct{Id: 111}
 
 	type args struct {
 		k   string
@@ -47,6 +55,7 @@ func Test_cache_Set(t *testing.T) {
 		want bool
 	}{
 		{name: "set", args: args{k: "a", v: 1, ttl: 2 * time.Second}, want: true},
+		{name: "set-struct", args: args{k: "a", v: m, ttl: 2 * time.Second}, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,6 +72,7 @@ func Test_cache_Set(t *testing.T) {
 		want bool
 	}{
 		{name: "get", args: args{k: "a", v: 1, ttl: 2 * time.Second}, want: true},
+		{name: "get-struct", args: args{k: "a", v: m, ttl: 2 * time.Second}, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

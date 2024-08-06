@@ -6,8 +6,8 @@ import (
 )
 
 // var text = "abcdefg" // fnv 比 xxxhash快
-var text = "abcdefg312dsaasa" // xxxhash 比 fnv快
-//var text = "abcdefg312dsaasdasdqsads" // xxxhash 比 fnv快
+// var text = "abcdefg312dsaasa" // xxxhash 比 fnv快
+var text = "abcdefg312dsaasdasdqsadserdcvgt" // xxxhash 比 fnv快
 
 func BenchmarkFNV(b *testing.B) {
 	h := newDefaultHasher()
