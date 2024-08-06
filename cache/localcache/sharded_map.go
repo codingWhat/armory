@@ -62,15 +62,15 @@ type shardedMap struct {
 }
 
 func (s *shardedMap) set(k string, v any) {
-	s.shards[xxhash.Sum64String(k)%shardsNum].set(k, v)
+	s.shards[xxhash.Sum64String(k)&(shardsNum-1)].set(k, v)
 }
 
 func (s *shardedMap) get(k string) (any, bool) {
-	return s.shards[xxhash.Sum64String(k)%shardsNum].get(k)
+	return s.shards[xxhash.Sum64String(k)&(shardsNum-1)].get(k)
 }
 
 func (s *shardedMap) del(k string) {
-	s.shards[xxhash.Sum64String(k)%shardsNum].del(k)
+	s.shards[xxhash.Sum64String(k)&(shardsNum-1)].del(k)
 }
 
 func (s *shardedMap) len() uint64 {
