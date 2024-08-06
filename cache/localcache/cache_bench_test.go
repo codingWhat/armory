@@ -31,24 +31,6 @@ func key(i int) string {
 	return fmt.Sprintf("key-%010d", i)
 }
 
-func SyncMapSet[T any](cs constructor[T], b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		var m sync.Map
-		for n := 0; n < maxEntryCount; n++ {
-			m.Store(key(n), cs.Get(n))
-		}
-	}
-}
-func FreeCacheSet[T any](cs constructor[T], b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		cache := freecache.NewCache(maxEntryCount * maxEntrySize)
-		for n := 0; n < maxEntryCount; n++ {
-			data, _ := cs.ToBytes(cs.Get(n))
-			cache.Set([]byte(key(n)), data, 0)
-		}
-	}
-}
-
 func initBigCache(entriesInWindow int) *bigcache.BigCache {
 	cache, _ := bigcache.New(context.Background(), bigcache.Config{
 		Shards:             256,
@@ -61,15 +43,6 @@ func initBigCache(entriesInWindow int) *bigcache.BigCache {
 	return cache
 }
 
-func BigCacheSet[T any](cs constructor[T], b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		cache := initBigCache(maxEntryCount)
-		for n := 0; n < maxEntryCount; n++ {
-			data, _ := cs.ToBytes(cs.Get(n))
-			cache.Set(key(n), data)
-		}
-	}
-}
 func parallelKey(threadID int, counter int) string {
 	return fmt.Sprintf("key-%04d-%06d", threadID, counter)
 }
@@ -228,7 +201,6 @@ func LCGetParallel[T any](cs constructor[T], b *testing.B) {
 	b.StopTimer()
 	cache := New(WithCapacity(10000), WithSetTimout(100*time.Millisecond))
 	for i := 0; i < maxEntryCount; i++ {
-		//data, _ := cs.ToBytes()
 		cache.Set(key(i), cs.Get(i), 2*time.Second)
 	}
 	b.StartTimer()
