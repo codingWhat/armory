@@ -55,7 +55,7 @@ type cache struct {
 	size int
 
 	store            store
-	policy           Policy
+	policy           policy
 	ekt              *expireKeyTimers
 	accessUniqBuffer *uniqRingBuffer
 
@@ -165,7 +165,7 @@ func (c *cache) Set(k string, v any, ttl time.Duration) bool {
 
 	if hit {
 		ent := getEntry(val.(*list.Element))
-		//细节: 防止读到脏数据，立即更新；注意add是异步操作，多写多读 -> 单写多读, 减少锁竞争
+		//细节: 防止读到脏数据，立即更新；注意add是异步操作，多写 -> 单写, 减少锁竞争
 		ent.mu.Lock()
 		ent.val = v
 		ent.expireAt = time.Now().Add(ttl)

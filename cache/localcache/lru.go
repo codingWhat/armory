@@ -14,7 +14,7 @@ type entry struct {
 	mu sync.RWMutex
 }
 
-type Policy interface {
+type policy interface {
 	isFull() bool
 	add(*entry) (*list.Element, *list.Element) // 返回新增，淘汰的entry
 	remove(*list.Element)
@@ -23,7 +23,7 @@ type Policy interface {
 	batchRenew([]*list.Element)
 }
 
-func newPolicy(size int) Policy {
+func newPolicy(size int) policy {
 	return newLRU(size)
 }
 
