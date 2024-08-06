@@ -135,7 +135,7 @@ type expireKeyTimers struct {
 ![常见hash函数](hash_func.png)
 
 ----
-fnv64 vs xxhash
+fnv64 vs xxhash  
 测试机器: mac-m1, go benchmark结果
 
 | hash函数 | fnv64a  | xxhash  |
