@@ -9,22 +9,29 @@ require (
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/alibaba/sentinel-golang v1.0.4
 	github.com/allegro/bigcache/v3 v3.1.0
+	github.com/cespare/xxhash v1.1.0
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/coocood/freecache v1.2.4
+	github.com/creachadair/cityhash v0.1.1
+	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofrs/flock v0.8.1
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/btree v1.1.2
+	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
+	github.com/minio/highwayhash v1.0.3
+	github.com/pierrec/xxHash v0.1.5
 	github.com/plar/go-adaptive-radix-tree v1.0.5
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/sasha-s/go-deadlock v0.3.1
+	github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
 	github.com/stretchr/testify v1.9.0
 	go.etcd.io/bbolt v1.3.9
 	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6
 	golang.org/x/sync v0.6.0
-	golang.org/x/sys v0.20.0
+	golang.org/x/sys v0.21.0
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 )
 
@@ -32,7 +39,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
-	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
