@@ -131,14 +131,14 @@ type expireKeyTimers struct {
 }
 ```
 ### hash函数选型
-
+[常见hash函数压测对比](https://github.com/smallnest/hash-bench)
 ![常见hash函数](hash_func.png)
 
 ----
 fnv64 vs xxhash  
 测试机器: mac-m1, go benchmark结果
 
-| hash函数 | fnv64a  | xxhash  |
+| hash函数 | fnv64a  | github.com/cespare/xxhash/v2  |
 |--------|---------|---------|
 | 8字节    | 5.130 ns/op | 8.817 ns/op |
 | 16字节   | 7.928 ns/op|   7.464 ns/op |
