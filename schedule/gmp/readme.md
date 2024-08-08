@@ -16,15 +16,67 @@ G和P交互如下图:
 
 
 ### 消费细节
-消费阶段，有两种消费模式
-1. work stealing 
-2. 普通消费
+go1.20.11版本
+消费阶段对应源码`runtime/proc.go`中的`schedule()`的`findRunnable()`方法
+1. 保证公平，防止全局`runq`中的goroutine饿死， 按概率(`runtime.SchedTick%61==0`)从全局runq中获取G
+2. 从本地`runnext`和`runq`中获取
+3. 从全局`runq`中获取
+3. 从netpoll中获取G
 
-<strong>work stealing机制</strong>  
-算是负载均衡的消费方式，当P没有可运行的G时，会主动从其他P(一半G)或者全局runq中窃取G。 
+![img.png](img.png)
+![img_1.png](img_1.png)
+![img_2.png](img_2.png)
+![img_3.png](img_3.png)
+![img_4.png](img_4.png)
 
-<strong>普通消费模式</strong>  
-P优先会消费`runnext`，再依次消费`runq`队列，不过这里有个`调度`细节, 这里说明下:
 
-> 在P都很繁忙的场景下，`全局runq`中的G可能迟迟得不到调度，为了公平起见，调度器会统计`runtime.SchedTick`，每次调度都会++, 当`runtime.SchedTick%61==0`时,会从`全局runq`中获取G来执行。
+### steal-work机制
+尝试4次, 每次随机选择一个P，尝试从"适合的"P中获取一半G
+![img_5.png](img_5.png)
+
+
+
+高效获取一半G:  
+从'pp'(受害者P)的`runq`中将其一半g取出写入batch(施害者P的`runq`)，更新`pp`(受害者)的`runq`头指针。
+```golang
+batchHead := pp.runqtail
+batch = &pp.runq
+
+func runqgrab(pp *p // 受害者P, batch *[256]guintptr //施害者P的runq , batchHead uint32 //施害者P的队尾指针, stealRunNextG bool) uint32 {
+	for {
+		h := atomic.LoadAcq(&pp.runqhead) // load-acquire, synchronize with other consumers
+		t := atomic.LoadAcq(&pp.runqtail) // load-acquire, synchronize with the producer
+		n := t - h
+		n = n - n/2
+		
+        ....省略非核心...
+		//移动后半部分数据
+		for i := uint32(0); i < n; i++ {
+			g := pp.runq[(h+i)%uint32(len(pp.runq))]
+			batch[(batchHead+i)%uint32(len(batch))] = g
+		}
+		
+		if atomic.CasRel(&pp.runqhead, h, h+n) { // cas-release, commits consume
+			return n
+		}
+	}
+}
+
+```
+执行完`runqgrab`之后，根据返回G的个数，快速定位链表的第一个`G`, 直接返回。
+![img_6.png](img_6.png)
+
+
+
+## g0, m0定义
+
+
+
+## 调度器的职责
+
+
+## sysmon的职责
+定期垃圾回收
+
+
 
