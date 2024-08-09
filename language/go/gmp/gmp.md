@@ -112,6 +112,9 @@ G生命周期：
 
 ![g_status](g_status.png)
 
+G(用户)退出:
+runtime·goexit1(mcall) -> goexit0 
+先切换到G0 -> 清空g的数据，解除和m的关系，g 的状态从 _Grunning 更新为 _Gdead，将g放入空闲队列
 
 ### G0,M0,P0,allgs,allm,allp
 - M0:是启动程序后的编号为0的主线程，这个M对应的实例会在全局变量runtime.m0中，M0负责执⾏初始化操作和启动第⼀个G， 在之后M0就和其他的M⼀样了。
