@@ -1,7 +1,7 @@
 // Copyright 2019 Andy Pan. All rights reserved.
 
 // Copyright 2019 smallnest&Allenxuxu. All rights reserved.
-// Use of this source code is governed by a MIT-style
+// Use of this source sdk is governed by a MIT-style
 // license that can be found in the LICENSE file.
 
 package ringbuffer

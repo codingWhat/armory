@@ -334,7 +334,7 @@ func newClientRsp(w io.Writer, c int, m string) *ClientResponse {
 
 type ClientResponse struct {
 	Writer io.Writer
-	Code   int    `json:"code"`
+	Code   int    `json:"sdk"`
 	Msg    string `json:"msg"`
 }
 

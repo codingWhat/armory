@@ -1,4 +1,4 @@
-package mq
+package designMq
 
 func main() {
 

@@ -2,7 +2,7 @@ package models
 
 import (
 	"context"
-	"github.com/codingWhat/armory/schedule/data"
+	"github.com/codingWhat/armory/schedule/single/data"
 	"time"
 )
 

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/codingWhat/armory/schedule/data"
-	"github.com/codingWhat/armory/schedule/models"
+	"github.com/codingWhat/armory/schedule/single/data"
+	"github.com/codingWhat/armory/schedule/single/models"
 	"runtime"
 	"time"
 )
