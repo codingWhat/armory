@@ -1,7 +1,8 @@
-## GMP理解
+## Go启动流程
+初始化m0和g0，m0和主线程绑定，之后按core核数初始化所有P，将第一个P(即P0)和m0、g0绑定，剩余的P放入空闲队列中。之后会创建g1(runtime.main)，放入P0的本地队列中,之后m0的g0开始执行调度逻辑。
 
+## 以Goroutine视角理解GMP
 以Goroutine生命周期来看，GMP更像是生产/消费模型，goroutine被创建之后，调度器会将其放到对应P的"队列"中, 之后被M消费执行。
-
 ### 生产G
 在生产阶段，底层对应`newproc`逻辑，通过`runqput`存储到P里。P有两个地方存储G, `runnenxt` 和 `runq`
 -  容量: `runnext`1个G，`runq`256个G，因此P总共可以存储257个G
@@ -20,7 +21,8 @@ go1.20.11版本
 1. 保证公平，防止全局`runq`中的goroutine饿死， 按概率(`runtime.SchedTick%61==0`)从全局runq中获取G
 2. 从本地`runnext`和`runq`中获取
 3. 从全局`runq`中获取
-3. 从netpoll中获取G
+3. 从netpoll中获取G, 返回第一个，剩下的直接追加到全局`runq`的尾部
+4. 从其他P那偷取一半G
 
 > 在P都很繁忙的场景下，`全局runq`中的G可能迟迟得不到调度，为了公平起见，调度器会统计`runtime.SchedTick`，每次调度都会++, 当`runtime.SchedTick%61==0`时,会从`全局runq`中获取G来执行(高优先级)。
 
@@ -37,7 +39,7 @@ runtime/proc.go
 ![steal_from_other_p](steal_from_other_p.png)  
 
 
-## Go调度器设计策略
+## Go调度器策略
 ### steal-work机制
 尝试4次, 每次随机选择一个P，尝试从"适合的"P中获取一半G
 >![stealwork](stealwork.png)
@@ -125,7 +127,6 @@ runtime·goexit1(mcall) -> goexit0
 - sched: sched是调度器，这里记录着所有空闲的m,空闲的p,全局队列runq等等
 
 ![g0-p0-m0](g0-p0-m0.png)
-
 
 ### Sysmon线程:
 和P不需要的关联的m，循环执行，主要指责包含:
