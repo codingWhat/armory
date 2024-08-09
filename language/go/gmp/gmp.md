@@ -128,6 +128,7 @@ runtime·goexit1(mcall) -> goexit0
 
 ![g0-p0-m0](g0-p0-m0.png)
 
+
 ### Sysmon线程:
 和P不需要的关联的m，循环执行，主要指责包含:
 - netpoll(fd事件)
