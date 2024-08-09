@@ -1,6 +1,6 @@
 ## GMP理解
 
-以Goroutine生命周期来看，GMP更像是生产/消费模型，goroutine被创建之后，调度器会将其放到对应P的"队列"中, 之后被M消费执行。
+以Goroutine生命周期来看，GMP更像是生产/消费模型，goroutine被创建之后，被放到对应P的"队列"中, 之后被调度逻辑消费执行。
 
 ### 生产G
 在生产阶段，底层对应`newproc`逻辑，通过`runqput`存储到P里。P有两个地方存储G, `runnenxt` 和 `runq`
