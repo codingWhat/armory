@@ -24,17 +24,17 @@ go1.20.11版本
 
 > 在P都很繁忙的场景下，`全局runq`中的G可能迟迟得不到调度，为了公平起见，调度器会统计`runtime.SchedTick`，每次调度都会++, 当`runtime.SchedTick%61==0`时,会从`全局runq`中获取G来执行(高优先级)。
 
-runtime/proc.go
-> 按'概率'从全局`runq`中获取
-![gmp_global_runq_probability](gmp_global_runq_random.png)
-从本地`runq`中获取
-![get from local runq](gmp_local_runq.png)
-从全局`runq`中获取
-![get_from_global_runq](get_from_global_runq.png)
-从`netpoll`中获取
-![get_form_netpoll](get_form_netpoll.png)
-从其他P中获取一半G
-![steal_from_other_p](steal_from_other_p.png)
+runtime/proc.go  
+> 按'概率'从全局`runq`中获取  
+![gmp_global_runq_probability](gmp_global_runq_random.png)    
+从本地`runq`中获取    
+![get from local runq](gmp_local_runq.png)  
+从全局`runq`中获取  
+![get_from_global_runq](get_from_global_runq.png)  
+从`netpoll`中获取  
+![get_form_netpoll](get_form_netpoll.png)  
+从其他P中获取一半G  
+![steal_from_other_p](steal_from_other_p.png)  
 
 
 ## Go调度器设计策略
