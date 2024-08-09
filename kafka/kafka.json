@@ -1,0 +1,9 @@
+{
+  "topic": [
+    "test_topic"
+  ],
+  "bootstrapServers": [
+    "21.6.115.7:9092"
+  ],
+  "consumerGroupId": "test_consume"
+}
