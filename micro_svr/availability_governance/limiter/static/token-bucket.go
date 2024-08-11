@@ -27,21 +27,21 @@ func (tb *TokenBucket) Allow() bool {
 	elapsed := now.Sub(tb.lastRefill).Seconds()
 	//fmt.Println(elapsed, tb.Rate, elapsed*tb.Rate)
 	//两个float64相乘会有精度损失
-	tb.Token += elapsed * tb.Rate
+	token := elapsed * tb.Rate
 	//tb.Token += multiply(now.Sub(tb.lastRefill), tb.Rate)
 
-	if tb.Token > tb.Capacity {
-		tb.Token = tb.Capacity
+	if token > tb.Capacity {
+		token = tb.Capacity
 	}
 
-	//fmt.Println("--->", tb.Token)
-	if tb.Token >= 1.0 {
-		tb.Token--
-		tb.lastRefill = now
-		return true
+	token--
+	if token < 0 {
+		return false
 	}
 
-	return false
+	tb.Token = token
+	tb.lastRefill = now
+	return true
 }
 
 func multiply(d time.Duration, limit float64) float64 {
