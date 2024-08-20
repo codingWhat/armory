@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/IBM/sarama"
 	"log"
+	"time"
 )
 
 // SendMessage 生产消息
@@ -30,12 +31,14 @@ func SendMessage(ctx context.Context, key, msg, topic string) error {
 }
 
 var (
-	asyncProducer sarama.AsyncProducer
-	err           error
+	producerPool Pool
+	err          error
 )
 
-func init() {
-	asyncProducer, err = NewASyncProducer()
+func InitProducerPool(initSize, maxSize int, connMaxAge time.Duration) {
+	producerPool, err = NewChannelPool(initSize, maxSize, connMaxAge, func() (Conn, error) {
+		return NewASyncProducer()
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -44,7 +47,13 @@ func init() {
 // SendMessages 批量生产消息
 func SendMessages(ctx context.Context, topic string, msgs []string) error {
 	// 这里可以考虑池化producer, 不过需要考虑连接保活
-	producer := asyncProducer
+	conn, err := producerPool.Get(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	producer := conn.(*PoolConn).Conn.(sarama.AsyncProducer)
 	go func() {
 		msgsLen := len(msgs)
 		delMsgLen := 0
