@@ -42,7 +42,7 @@ func init() {
 }
 
 // SendMessages 批量生产消息
-func SendMessages(ctx context.Context, msgs []string, topic string) error {
+func SendMessages(ctx context.Context, topic string, msgs []string) error {
 	// 这里可以考虑池化producer, 不过需要考虑连接保活
 	producer := asyncProducer
 	go func() {
