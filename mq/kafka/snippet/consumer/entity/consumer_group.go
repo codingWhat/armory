@@ -9,7 +9,9 @@ import (
 
 func AddConsumer2ConsumerGroup(topics []string, group string) error {
 
-	client, err := NewConsumerClient()
+	client, err := NewConsumerClient(
+		WithConsumerGroupRebalanceStrategies(sarama.NewBalanceStrategyRoundRobin()),
+		WithChannelSize(1000))
 	if err != nil {
 		return err
 	}
@@ -58,6 +60,10 @@ func (c *ConsumerGroupHandle) Cleanup(session sarama.ConsumerGroupSession) error
 }
 
 func (c *ConsumerGroupHandle) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	//TODO implement me
-	panic("implement me")
+	for msg := range claim.Messages() {
+		// todo buz logic
+		session.MarkMessage(msg, "")
+		session.Commit()
+	}
+	return nil
 }

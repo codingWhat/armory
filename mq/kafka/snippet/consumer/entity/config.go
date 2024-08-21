@@ -2,7 +2,6 @@ package entity
 
 import (
 	"github.com/IBM/sarama"
-	"log"
 	"sync/atomic"
 	"time"
 )
@@ -52,43 +51,80 @@ const (
 	AssignorRange      = "range"      // 分区分配策略 range
 )
 
-func NewConsumerConfig(assignor string, channelBufferSize int) *sarama.Config {
-	version, err := sarama.ParseKafkaVersion(KafkaConf.Version)
-	if err != nil {
-		log.Fatalf("kafka's version is invalid: %v", err)
-	}
+type Option func(config *sarama.Config)
 
+func WithConsumerGroupRebalanceStrategies(strategy sarama.BalanceStrategy) Option {
+	return func(config *sarama.Config) {
+		config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{strategy}
+	}
+}
+
+func WithProducerCompression(c sarama.CompressionCodec) Option {
+	return func(config *sarama.Config) {
+		config.Producer.Compression = c
+	}
+}
+
+func WithMaxProcessTime(t time.Duration) Option {
+	return func(config *sarama.Config) {
+		config.Consumer.MaxProcessingTime = t
+	}
+}
+
+func WithKafkaVersion(version sarama.KafkaVersion) Option {
+	return func(config *sarama.Config) {
+		config.Version = version
+	}
+}
+
+func WithSASL(user, pwd string) Option {
+	return func(config *sarama.Config) {
+		// 认证信息
+		config.Net.SASL.Enable = true
+		config.Net.SASL.Handshake = true
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+		config.Net.SASL.User = KafkaConf.User
+		config.Net.SASL.Password = KafkaConf.Pwd
+	}
+}
+
+func WithChannelSize(size int) Option {
+	return func(config *sarama.Config) {
+		config.ChannelBufferSize = size
+	}
+}
+
+func DefaultConsumerConfig() *sarama.Config {
+
+	//config.Consumer.Return.Errors = false // 单独消费者时，需要读取
+	/*
+	  partitionConsumer, err := consumer.ConsumePartition() -> for err := range partitionConsumer.Errors(){ }
+	*/
+
+	//配置初始化
 	config := sarama.NewConfig()
-	config.Version = version
-	// 分区分配策略
-	switch assignor {
-	case AssignorSticky:
-		config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategySticky()}
-	case AssignorRoundRobin:
-		config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
-	case AssignorRange:
-		config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRange()}
-	default:
-		log.Fatalf("invalid partition assignor: %s", assignor)
-	}
+	config.Version = sarama.V0_10_1_0
+	config.ChannelBufferSize = 200 // channel长度
 
-	//默认自动提交，不阻塞消费
-	config.Consumer.Return.Errors = false
+	//消费者拉取阶段
+	config.Consumer.Fetch.Min = 1 // "定期定量"原则，最少1字节，就返回
+	config.Consumer.Retry.Backoff = 2 * time.Second
+
+	//消费者处理阶段
+	config.Consumer.MaxProcessingTime = 3 * time.Second
+
+	//消费者提交阶段; 默认自动提交，不阻塞； 异步尝试提交三次
 	config.Consumer.Offsets.Initial = sarama.OffsetNewest
-	config.Consumer.MaxProcessingTime = 10 * time.Second
-	config.ChannelBufferSize = channelBufferSize // channel长度
-	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	config.Consumer.Offsets.Retry.Max = 3
+	config.Consumer.Offsets.AutoCommit.Enable = true
+	config.Consumer.Offsets.AutoCommit.Interval = 1 * time.Second
 
-	//鉴权
-	// 认证信息
-	config.Net.SASL.Enable = true
-	config.Net.SASL.Handshake = true
-	//config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-	//	return nil
-	//}
-	config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-	config.Net.SASL.User = KafkaConf.User
-	config.Net.SASL.Password = KafkaConf.Pwd
+	//消费组配置
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	config.Consumer.Group.Rebalance.Retry.Max = 4
+	config.Consumer.Group.Rebalance.Retry.Backoff = 2 * time.Second
+
+	config.Consumer.Group.Rebalance.Timeout = 60 * time.Second //rebalance之后，如果60s之后还没有加入的，就从group剔除。
 
 	return config
 }

@@ -13,6 +13,8 @@ import (
 // 通过配置中心控制hash槽和partition的映射关系，来动态调整partition负载
 func main() {
 	config := entity.NewProducerConfig()
+	config.Consumer.MaxProcessingTime = 200
+	config.Consumer.Fetch.Max = 122
 	config.Producer.Partitioner = NewCustomConsistentHashSlotPartitioner()
 }
 
