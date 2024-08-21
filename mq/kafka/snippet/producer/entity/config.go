@@ -1,4 +1,4 @@
-package producer
+package entity
 
 import (
 	"github.com/IBM/sarama"
@@ -27,10 +27,27 @@ func LoadKafkaConfigInfo() *KafkaBaseConf {
 	return KafkaConf
 }
 
+type Option func(config *sarama.Config)
+
+func WithProducerRetryMax(maxRetry int) Option {
+	return func(config *sarama.Config) {
+		config.Producer.Retry.Max = maxRetry
+	}
+}
+
+func WithProducerCompression(c sarama.CompressionCodec) Option {
+	return func(config *sarama.Config) {
+		config.Producer.Compression = c
+	}
+}
+
+// DefaultProducerConfig 生产者默认配置
+var DefaultProducerConfig = NewProducerConfig
+
 // NewProducerConfig 生成生产者sarama config
 func NewProducerConfig() *sarama.Config {
 	config := sarama.NewConfig()
-	// config.MetricRegistry = nil
+	config.MetricRegistry = nil
 	version, err := sarama.ParseKafkaVersion(KafkaConf.Version)
 	if err != nil {
 		log.Fatalf("Error parsing Kafka version: %v", err)
