@@ -6,41 +6,45 @@ import (
 	"sync/atomic"
 )
 
-var _pI ProducerPool
-
 // GetProducerPool 获取producer池
 func GetProducerPool() ProducerPool {
 	return _pI
 }
 
-// InitProducerInstances 初始化producer池
-func InitProducerInstances(insConf *Conf, ops ...Option) (ProducerPool, error) {
+// InitProducerPool 初始化producer池
+func InitProducerPool() error {
 	if _pI != nil {
-		return _pI, nil
+		return errors.New("pool has initialized")
 	}
 	_pI = NewProducerInstancesPool()
-	return _pI, nil
+	return nil
 }
 
-// NewProducerInstancesPool 自定义使用
-func NewProducerInstancesPool() ProducerPool {
-	return &producerInstances{
-		async: newAsyncInstances(),
-		sync:  newSyncInstances(),
+// InitProducerPoolWithRemoteConfig 初始化producer池
+func InitProducerPoolWithRemoteConfig() error {
+	//1.远程配置: 多个produer实例配置
+	//_ = LoadKafkaConfigInfo()
+	//2.解析远程配置: 最终构造出[]*ProducerConfig
+
+	var configs []*ProducerConfig
+	if _pI != nil {
+		return nil
 	}
+	_pI = NewProducerInstancesPool()
+	for _, conf := range configs {
+		if err := _pI.SetProducer(conf); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-type ProducerPool interface {
-	AddProducer(conf *Conf, ops ...Option) error
-	GetAsyncProducer(name string) (*Producer, error)
-	GetSyncProducer(name string) (*Producer, error)
-	Close()
-}
-
-type Conf struct {
-	Name      string
+type ProducerConfig struct {
+	Name      string   //区分不同producer
 	BrokerIPs []string //从配置中心获取
-	IsSync    bool
+	IsSync    bool     //同步or异步生产者标识
+
+	Options []Option
 }
 
 type producerInstances struct {
@@ -50,24 +54,24 @@ type producerInstances struct {
 	isClosed atomic.Bool
 }
 
-func (pi *producerInstances) AddProducer(insConf *Conf, ops ...Option) error {
+func (pi *producerInstances) SetProducer(pConf *ProducerConfig) error {
 	conf := DefaultProducerConfig()
-	for _, op := range ops {
+	for _, op := range pConf.Options {
 		op(conf)
 	}
 
-	if insConf.IsSync {
-		p, err := sarama.NewSyncProducer(insConf.BrokerIPs, conf)
+	if pConf.IsSync {
+		p, err := sarama.NewSyncProducer(pConf.BrokerIPs, conf)
 		if err != nil {
 			return err
 		}
-		pi.sync.set(insConf.Name, p)
+		pi.sync.set(pConf.Name, p) // 关闭旧实例，并覆盖
 	} else {
-		p, err := sarama.NewAsyncProducer(insConf.BrokerIPs, conf)
+		p, err := sarama.NewAsyncProducer(pConf.BrokerIPs, conf)
 		if err != nil {
 			return err
 		}
-		pi.async.set(insConf.Name, p)
+		pi.async.set(pConf.Name, p) //// 关闭旧实例，并覆盖
 	}
 	return nil
 }

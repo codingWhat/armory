@@ -14,7 +14,7 @@ type Producer struct {
 }
 
 // SendMessage 生产消息
-func (p *Producer) SendMessage(key, msg, topic string) error {
+func (p *Producer) SendMessage(topic, key, msg string) error {
 	if !p.isSync {
 		return errors.New(" only be called by sync-producer")
 	}
