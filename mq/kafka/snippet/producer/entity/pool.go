@@ -3,30 +3,7 @@ package entity
 import (
 	"github.com/IBM/sarama"
 	"sync"
-	"sync/atomic"
 )
-
-var _PI = &producerInstances{
-	async: newAsyncInstances(),
-	sync:  newSyncInstances(),
-}
-
-type producerInstances struct {
-	async *asyncInstances
-	sync  *syncInstances
-
-	isClosed atomic.Bool
-}
-
-func (pi *producerInstances) close() {
-	if pi.isClosed.Load() {
-		return
-	}
-
-	pi.isClosed.Store(true)
-	pi.sync.close()
-	pi.async.close()
-}
 
 type asyncInstances struct {
 	mu        sync.RWMutex

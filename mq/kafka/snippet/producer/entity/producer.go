@@ -1,16 +1,56 @@
 package entity
 
 import (
+	"errors"
 	"github.com/IBM/sarama"
+	"sync/atomic"
 )
 
-type InstanceConf struct {
+var _pI ProducerPool
+
+// GetProducerPool 获取producer池
+func GetProducerPool() ProducerPool {
+	return _pI
+}
+
+// InitProducerInstances 初始化producer池
+func InitProducerInstances(insConf *Conf, ops ...Option) (ProducerPool, error) {
+	if _pI != nil {
+		return _pI, nil
+	}
+	_pI = NewProducerInstancesPool()
+	return _pI, nil
+}
+
+// NewProducerInstancesPool 自定义使用
+func NewProducerInstancesPool() ProducerPool {
+	return &producerInstances{
+		async: newAsyncInstances(),
+		sync:  newSyncInstances(),
+	}
+}
+
+type ProducerPool interface {
+	AddProducer(conf *Conf, ops ...Option) error
+	GetAsyncProducer(name string) (*Producer, error)
+	GetSyncProducer(name string) (*Producer, error)
+	Close()
+}
+
+type Conf struct {
 	Name      string
 	BrokerIPs []string //从配置中心获取
 	IsSync    bool
 }
 
-func InitProducerInstances(insConf *InstanceConf, ops ...Option) error {
+type producerInstances struct {
+	async *asyncInstances
+	sync  *syncInstances
+
+	isClosed atomic.Bool
+}
+
+func (pi *producerInstances) AddProducer(insConf *Conf, ops ...Option) error {
 	conf := DefaultProducerConfig()
 	for _, op := range ops {
 		op(conf)
@@ -21,33 +61,40 @@ func InitProducerInstances(insConf *InstanceConf, ops ...Option) error {
 		if err != nil {
 			return err
 		}
-		_PI.sync.set(insConf.Name, p)
+		pi.sync.set(insConf.Name, p)
 	} else {
 		p, err := sarama.NewAsyncProducer(insConf.BrokerIPs, conf)
 		if err != nil {
 			return err
 		}
-		_PI.async.set(insConf.Name, p)
+		pi.async.set(insConf.Name, p)
 	}
 	return nil
 }
+func (pi *producerInstances) Close() {
+	if pi.isClosed.Load() {
+		return
+	}
 
-func CloseProducerInstances() {
-	_PI.close()
+	pi.isClosed.Store(true)
+	pi.sync.close()
+	pi.async.close()
 }
 
-func GetAsyncProducer(name string) *Producer {
-	p, ok := _PI.async.get(name)
+var ErrProducerNotReg = errors.New("producer is not reg")
+
+func (pi *producerInstances) GetAsyncProducer(name string) (*Producer, error) {
+	p, ok := pi.async.get(name)
 	if !ok {
-		panic("kafka instance:" + name + " is not reg")
+		return nil, ErrProducerNotReg
 	}
-	return &Producer{ap: p}
+	return &Producer{ap: p}, nil
 }
 
-func GetSyncProducer(name string) *Producer {
-	p, ok := _PI.sync.get(name)
+func (pi *producerInstances) GetSyncProducer(name string) (*Producer, error) {
+	p, ok := pi.sync.get(name)
 	if !ok {
-		panic("kafka instance:" + name + " is not reg")
+		return nil, ErrProducerNotReg
 	}
-	return &Producer{sp: p, isSync: true}
+	return &Producer{sp: p, isSync: true}, nil
 }
