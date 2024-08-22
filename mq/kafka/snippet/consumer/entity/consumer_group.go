@@ -2,21 +2,23 @@ package entity
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/IBM/sarama"
+	"golang.org/x/time/rate"
 	"log"
 )
 
-func AddConsumer2ConsumerGroup(topics []string, group string) error {
+func AddConsumer2ConsumerGroup(topics []string, conf *ConsumerConf) error {
 
 	client, err := NewConsumerClient(
 		WithConsumerGroupRebalanceStrategies(sarama.NewBalanceStrategyRoundRobin()),
-		WithChannelSize(1000))
+		WithChannelSize(conf.ChannelSize))
 	if err != nil {
 		return err
 	}
 
-	cg, err := sarama.NewConsumerGroupFromClient(group, client)
+	cg, err := sarama.NewConsumerGroupFromClient(conf.Group, client)
 	if err != nil {
 		return err
 	}
@@ -29,7 +31,7 @@ func AddConsumer2ConsumerGroup(topics []string, group string) error {
 		}()
 
 		for {
-			if err := cg.Consume(ctx, topics, &ConsumerGroupHandle{}); err != nil {
+			if err := cg.Consume(ctx, topics, NewConsumerGroupHandle(ctx, conf)); err != nil {
 				msg := fmt.Sprintf("consume failed, err: %+v, topic: %+v", err, topics)
 				log.Println(msg)
 				return
@@ -46,24 +48,57 @@ func AddConsumer2ConsumerGroup(topics []string, group string) error {
 	return cg.Close()
 }
 
+// newLimiter get a *rate.Limiter
+func newLimiter(conf *ConsumerConf) *rate.Limiter {
+	if conf == nil {
+		return rate.NewLimiter(rate.Inf, 0)
+	}
+	return rate.NewLimiter(rate.Limit(conf.Rate), conf.Burst)
+}
+
 type ConsumerGroupHandle struct {
+	ctx     context.Context
+	limiter *rate.Limiter
+}
+
+func NewConsumerGroupHandle(ctx context.Context, conf *ConsumerConf) *ConsumerGroupHandle {
+	return &ConsumerGroupHandle{
+		ctx:     ctx,
+		limiter: newLimiter(conf),
+	}
 }
 
 func (c *ConsumerGroupHandle) Setup(session sarama.ConsumerGroupSession) error {
-	//TODO implement me
-	panic("implement me")
+	log.Printf("Setup kafka session，member_id：%v，generation_id：%v，claims：%v",
+		session.MemberID(), session.GenerationID(), session.Claims())
+	return nil
 }
 
 func (c *ConsumerGroupHandle) Cleanup(session sarama.ConsumerGroupSession) error {
-	//TODO implement me
-	panic("implement me")
+	log.Printf("Cleanup kafka session，member_id：%v，generation_id：%v，claims：%v",
+		session.MemberID(), session.GenerationID(), session.Claims())
+	return nil
 }
 
-func (c *ConsumerGroupHandle) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	for msg := range claim.Messages() {
-		// todo buz logic
-		session.MarkMessage(msg, "")
-		session.Commit()
+func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for {
+		if err := c.limiter.Wait(c.ctx); err != nil {
+			if errors.Is(err, c.ctx.Err()) {
+				return errors.New("server shut down")
+			}
+		}
+
+		select {
+		case <-c.ctx.Done():
+			return errors.New("server shut down")
+		case <-sess.Context().Done():
+			return errors.New("session close")
+		case msg, ok := <-claim.Messages():
+			if ok {
+				// todo buz logic
+				sess.MarkMessage(msg, "")
+				sess.Commit()
+			}
+		}
 	}
-	return nil
 }

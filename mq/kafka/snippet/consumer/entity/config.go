@@ -8,20 +8,30 @@ import (
 
 var TopicConsumeConfig atomic.Value // topic => config
 
+type ConsumerConf struct {
+	Group string
+
+	ChannelSize int
+	//消费者配置
+	ConsumerNum int
+	Rate        float64
+	Burst       int
+}
+
 func InitKafkaConsumeConfig() {
 	// get 'key info' from local config
 	// get config info from remote config center by 'key'
 
 	// handle the add or delete ops, then set `TopicConsumeConfig`
-	TopicConsumeConfig.Store(make(map[string][]string))
+	TopicConsumeConfig.Store(make(map[string]ConsumerConf))
 
 }
 
-func LoadTopicConsumeConfig() map[string][]string {
-	return TopicConsumeConfig.Load().(map[string][]string)
+func LoadTopicConsumeConfig() map[string]ConsumerConf {
+	return TopicConsumeConfig.Load().(map[string]ConsumerConf)
 }
 
-func SetTopicConsumeConfig(val map[string][]string) {
+func SetTopicConsumeConfig(val map[string]ConsumerConf) {
 	TopicConsumeConfig.Store(val)
 }
 
