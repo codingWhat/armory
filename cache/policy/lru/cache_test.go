@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-var c *Cache
+var c *cache
 
 func initCache() {
-	c = &Cache{
+	c = &cache{
 		size:  4,
 		ll:    list.New(),
 		items: make(map[string]*entry),

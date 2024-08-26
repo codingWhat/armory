@@ -1,23 +1,32 @@
 package simplecache
 
-import "sync"
+import (
+	cache2 "github.com/codingWhat/armory/cache"
+	"sync"
+)
 
-type cache struct {
-	mu   *sync.RWMutex
-	data map[string]interface{}
+func New() cache2.Cache {
+	return &cache{
+		data: make(map[string]any),
+	}
 }
 
-func (c *cache) set(k string, v interface{}) {
+type cache struct {
+	mu   sync.RWMutex //
+	data map[string]any
+}
+
+func (c *cache) Set(k string, v any) {
 	c.mu.Lock()
 	c.data[k] = v
 	c.mu.Unlock()
 }
 
-func (c *cache) get(k string) (interface{}, bool) {
+func (c *cache) Get(k string) any {
 	c.mu.RLock()
-	v, ok := c.data[k]
+	v := c.data[k]
 	c.mu.RUnlock()
-	return v, ok
+	return v
 }
 func (c *cache) del(k string) {
 	c.mu.Lock()
