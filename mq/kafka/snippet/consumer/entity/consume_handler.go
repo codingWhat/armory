@@ -8,6 +8,7 @@ import (
 	"github.com/codingWhat/armory/mq/kafka/snippet/consumer/pq"
 	"golang.org/x/time/rate"
 	"log"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -56,9 +57,23 @@ func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, cla
 			return errors.New("session close")
 		case msg, ok := <-claim.Messages():
 			if ok {
+				poc := GetPOC(msg.Partition, sess)
 				if limiter.Allow() {
 					//todo msg dispatch
-					fmt.Println("---->", msg)
+
+					/*-------------------模拟消息有序提交-------------------------*/
+					//写入优先级队列。 注意必须是手动提交模式
+					if err := poc.Offer(msg); err != nil {
+						panic(err) //for test
+					}
+					//模拟消息处理
+					go func(m *sarama.ConsumerMessage) {
+						time.Sleep(time.Duration(rand.Int()%4) * time.Second) //模拟随机耗时
+
+						if err := poc.MarkConsumed(m.Offset); err != nil {
+							panic(err) // for test
+						}
+					}(msg)
 				}
 			}
 		}
@@ -74,20 +89,37 @@ func init() {
 	pocs = make(map[int32]*PartitionOffsetCommitter)
 }
 
-func GetPOC(partitionID int32) *PartitionOffsetCommitter {
+func onceInitPOC(partitionID int32, sess sarama.ConsumerGroupSession) {
 	mu.Lock()
 	defer mu.Unlock()
 	_, ok := pocs[partitionID]
 	if !ok {
-		pocs[partitionID] = NewPartitionOffsetCommitter()
+		pocs[partitionID] = NewPartitionOffsetCommitter(partitionID, sess)
+	}
+}
+
+func GetPOC(partitionID int32, sess sarama.ConsumerGroupSession) *PartitionOffsetCommitter {
+	mu.Lock()
+	defer mu.Unlock()
+	_, ok := pocs[partitionID]
+	if !ok {
+		pocs[partitionID] = NewPartitionOffsetCommitter(partitionID, sess)
 	}
 	return pocs[partitionID]
 }
 
-func NewPartitionOffsetCommitter() *PartitionOffsetCommitter {
-	return &PartitionOffsetCommitter{
-		pq: pq.New(),
+func NewPartitionOffsetCommitter(partitionID int32, sess sarama.ConsumerGroupSession) *PartitionOffsetCommitter {
+	poc := &PartitionOffsetCommitter{
+		Partition:      partitionID,
+		pq:             pq.New(),
+		commitInterval: 1 * time.Second,
+		sess:           sess,
+		input:          make(chan *event, 20),
 	}
+
+	go withRecover(poc.Run)
+
+	return poc
 }
 
 type EvtType int
@@ -108,9 +140,11 @@ type event struct {
 type PartitionOffsetCommitter struct {
 	pq *pq.PriorityQueue
 
-	input chan *event
+	Partition int32
+	input     chan *event
 
-	sess sarama.ConsumerGroupSession
+	commitInterval time.Duration
+	sess           sarama.ConsumerGroupSession
 }
 
 func (poc *PartitionOffsetCommitter) Offer(msg *sarama.ConsumerMessage) error {
@@ -124,7 +158,7 @@ func (poc *PartitionOffsetCommitter) Offer(msg *sarama.ConsumerMessage) error {
 	return <-ch
 }
 
-func (poc *PartitionOffsetCommitter) Remove(offset int64) error {
+func (poc *PartitionOffsetCommitter) MarkConsumed(offset int64) error {
 
 	ch := make(chan error)
 	poc.input <- &event{
@@ -135,9 +169,9 @@ func (poc *PartitionOffsetCommitter) Remove(offset int64) error {
 	return <-ch
 }
 
-func (poc *PartitionOffsetCommitter) Run() error {
+func (poc *PartitionOffsetCommitter) Run() {
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(poc.commitInterval)
 	for {
 		select {
 		case evt := <-poc.input:
@@ -159,7 +193,8 @@ func (poc *PartitionOffsetCommitter) commit() {
 			break
 		}
 
-		qv := item.Value.(*QVal)
+		qv := item.Value.(*ExtMsg)
+		fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "[trigger poc commit] offset:", qv.msg.Offset, "----- val:", string(qv.msg.Value))
 		if !qv.mark {
 			_ = poc.pq.Push(item)
 			break
@@ -170,7 +205,7 @@ func (poc *PartitionOffsetCommitter) commit() {
 	poc.sess.Commit()
 }
 
-type QVal struct {
+type ExtMsg struct {
 	msg  *sarama.ConsumerMessage
 	mark bool
 }
@@ -190,14 +225,14 @@ func (poc *PartitionOffsetCommitter) processEvt(evt *event) {
 		err = poc.pq.Push(&pq.Item{
 			Key:      key,
 			Priority: offset,
-			Value:    &QVal{msg: evt.msg},
+			Value:    &ExtMsg{msg: evt.msg},
 		})
 	} else {
 		item := poc.pq.PopByKey(key)
 		if item == nil {
 			return
 		}
-		qv := item.Value.(*QVal) // 标记 被消费成功
+		qv := item.Value.(*ExtMsg) // 标记 被消费成功
 		qv.mark = true
 		err = poc.pq.Push(item)
 	}

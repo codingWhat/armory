@@ -158,7 +158,7 @@ func (pq *PriorityQueue) PopByKey(key string) *Item {
 		return nil
 	}
 
-	// Remove the item the heap and delete it from the dataMap
+	// MarkConsumed the item the heap and delete it from the dataMap
 	itemRaw := heap.Remove(&pq.data, item.index)
 	delete(pq.dataMap, key)
 

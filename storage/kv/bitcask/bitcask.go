@@ -99,7 +99,7 @@ func (db *DB) merge() {
 				offset += int64(e.Size())
 			}
 			if buff.Len() == 0 {
-				//fmt.Println("Remove---->", fileId, f.Name(), buff.Len(), db.dir+info.Name(), newBakName)
+				//fmt.Println("MarkConsumed---->", fileId, f.Name(), buff.Len(), db.dir+info.Name(), newBakName)
 				os.Remove(db.dir + info.Name())
 				os.Remove(newBakName)
 				os.Remove(db.dir + "hint_" + strconv.Itoa(fileId))
