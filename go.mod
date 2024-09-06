@@ -3,7 +3,6 @@ module github.com/codingWhat/armory
 go 1.18
 
 require (
-	git.code.oa.com/trpc-go/trpc-database/localcache v0.1.11
 	github.com/IBM/sarama v1.43.0
 	github.com/RussellLuo/timingwheel v0.0.0-20191022104228-f534fd34a762
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
@@ -11,7 +10,6 @@ require (
 	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/cespare/xxhash/v2 v2.2.0
-	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/coocood/freecache v1.2.4
 	github.com/creachadair/cityhash v0.1.1
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13
@@ -22,9 +20,9 @@ require (
 	github.com/google/btree v1.1.2
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
 	github.com/minio/highwayhash v1.0.3
+	github.com/mitchellh/copystructure v1.2.0
 	github.com/pierrec/xxHash v0.1.5
 	github.com/plar/go-adaptive-radix-tree v1.0.5
-	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/sasha-s/go-deadlock v0.3.1
 	github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
 	github.com/stretchr/testify v1.9.0
@@ -56,6 +54,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.3.0 // indirect
+	github.com/gopherjs/gopherjs v0.0.0-20210503212227-fb464eba2686 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
@@ -67,12 +66,15 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230110061619-bbe2e5e100de // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/panjf2000/ants v1.3.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
@@ -83,6 +85,7 @@ require (
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.30.0 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.2 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
