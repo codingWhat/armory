@@ -194,14 +194,14 @@ func (poc *PartitionOffsetCommitter) commit() {
 		}
 
 		qv := item.Value.(*ExtMsg)
-		fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "[trigger poc commit] offset:", qv.msg.Offset, "----- val:", string(qv.msg.Value))
 		if !qv.mark {
 			_ = poc.pq.Push(item)
 			break
 		}
+		fmt.Println("【Commit Goroutine】 ", time.Now().Format("2006-01-02 15:04:05"), ", partitionID:", poc.Partition, ", offset:", qv.msg.Offset, ", val:", string(qv.msg.Value))
 		poc.sess.MarkMessage(qv.msg, "")
-
 	}
+
 	poc.sess.Commit()
 }
 
@@ -227,6 +227,9 @@ func (poc *PartitionOffsetCommitter) processEvt(evt *event) {
 			Priority: offset,
 			Value:    &ExtMsg{msg: evt.msg},
 		})
+		if err == nil {
+			fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "---->", "Recv Msg---->", poc.Partition, offset)
+		}
 	} else {
 		item := poc.pq.PopByKey(key)
 		if item == nil {

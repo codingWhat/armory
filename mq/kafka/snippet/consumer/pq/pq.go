@@ -13,8 +13,6 @@ import (
 	"container/heap"
 	"errors"
 	"sync"
-
-	"github.com/mitchellh/copystructure"
 )
 
 // ErrEmpty is returned for queues with no items
@@ -119,21 +117,24 @@ func (pq *PriorityQueue) Push(i *Item) error {
 	}
 	// Copy the item value(s) so that modifications to the source item does not
 	// affect the item on the queue
-	clone, err := copystructure.Copy(i)
-	if err != nil {
-		return err
-	}
+	//clone, err := copystructure.Copy(i)
+	//if err != nil {
+	//	return err
+	//}
 
-	pq.dataMap[i.Key] = clone.(*Item)
-	heap.Push(&pq.data, clone)
+	//pq.dataMap[i.Key] = clone.(*Item)
+	//heap.Push(&pq.data, clone)
+	//return nil
+
+	pq.dataMap[i.Key] = i
+	heap.Push(&pq.data, i)
 	return nil
 }
 
 func (pq *PriorityQueue) Peek() *Item {
 	pq.lock.Lock()
 	defer pq.lock.Unlock()
-
-	if pq.Len() == 0 {
+	if pq.data.Len() == 0 {
 		return nil
 	}
 
@@ -215,7 +216,8 @@ func (q *queue) Pop() interface{} {
 
 func (q *queue) Peek() interface{} {
 	old := *q
-	n := len(old)
-	item := old[n-1]
-	return item
+	if len(old) == 0 {
+		return nil
+	}
+	return old[0]
 }
