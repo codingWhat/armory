@@ -56,28 +56,75 @@ func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, cla
 		case <-sess.Context().Done():
 			return errors.New("session close")
 		case msg, ok := <-claim.Messages():
-			if ok {
-				poc := GetPOC(msg.Partition, sess)
-				if limiter.Allow() {
-					//todo msg dispatch
-
-					/*-------------------模拟消息有序提交-------------------------*/
-					//写入优先级队列。 注意必须是手动提交模式
-					if err := poc.Offer(msg); err != nil {
-						panic(err) //for test
-					}
-					//模拟消息处理
-					go func(m *sarama.ConsumerMessage) {
-						time.Sleep(time.Duration(rand.Int()%4) * time.Second) //模拟随机耗时
-
-						if err := poc.MarkConsumed(m.Offset); err != nil {
-							panic(err) // for test
-						}
-					}(msg)
-				}
+			if !ok {
+				return errors.New("get msg failed")
 			}
+			if err := limiter.Wait(c.ctx); err != nil {
+				return err
+			}
+			poc := GetPOC(msg.Partition, sess)
+			//todo msg dispatch
+
+			/*-------------------模拟消息有序提交-------------------------*/
+			//写入优先级队列。 注意必须是手动提交模式
+			if err := poc.Offer(msg); err != nil {
+				panic(err) //for test
+			}
+			//模拟消息处理
+			go func(m *sarama.ConsumerMessage) {
+				time.Sleep(time.Duration(rand.Int()%4) * time.Second) //模拟随机耗时
+
+				if err := poc.MarkConsumed(m.Offset); err != nil {
+					panic(err) // for test
+				}
+			}(msg)
+
 		}
 	}
+}
+
+type ParallelHandler struct {
+	pph map[int32]*PartitionParallelHandler
+}
+
+type HashMsg interface {
+	RawKey() []byte
+}
+
+type Processor interface {
+	Input(HashMsg)
+	Process()
+	Next() Processor
+}
+
+type Stage struct {
+	// worker pool
+	workerSize int
+	next       *Stage
+}
+
+func (s *Stage) Input(msgs HashMsg) {
+	//todo buz logic
+	//不同阶段实现不同的msg struct
+	// idx := msg.RawKey() % s.workerSize
+	//s.workerPool(idx).Input(s.Process)
+}
+
+func (s *Stage) Process() {
+	//todo buz logic
+}
+
+type PartitionParallelHandler struct {
+	poc *PartitionOffsetCommitter
+
+	mu         sync.RWMutex
+	processors map[string]Processor
+}
+
+func (pph *PartitionParallelHandler) AddStageProcessor(name string, p Processor) {
+	pph.mu.Lock()
+	defer pph.mu.Unlock()
+	pph.processors[name] = p
 }
 
 var (
