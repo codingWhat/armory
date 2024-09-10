@@ -26,7 +26,7 @@ func main() {
 	*/
 
 	// 获取同步Producer
-	p, err := entity.GetProducerPool().GetSyncProducer("demo")
+	p, err := entity.GetProducerPool().GetSyncProducer("parallel_consume")
 	if err != nil {
 		panic("get producer failed")
 	}
