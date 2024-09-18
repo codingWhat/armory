@@ -9,7 +9,7 @@ import (
 func New(size int) cache2.Cache {
 	return &cache{
 		capacity: size,
-		keyElems: make(map[string]*list.Element), //key => val
+		keyElems: make(map[string]*list.Element), //key => val, 注意这里的ele对应指定freq里的element, 切记，当更新元素频次时也更新这里
 		freqKeys: make(map[int]*list.List),       //freqKeys => 相同freq的keys
 		minFreq:  1,
 	}
