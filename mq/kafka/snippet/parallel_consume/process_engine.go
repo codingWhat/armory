@@ -44,6 +44,9 @@ type PartitionParallelHandler struct {
 func (pph *PartitionParallelHandler) Input() chan *sarama.ConsumerMessage {
 	return pph.input
 }
+func (pph *PartitionParallelHandler) Close() {
+	close(pph.input)
+}
 
 func (pph *PartitionParallelHandler) AddProcessor(processor Processor) {
 	if pph.processors == nil {
@@ -90,8 +93,9 @@ func (pph *PartitionParallelHandler) Start() error {
 			}
 		case msg, ok := <-pph.input:
 			if !ok {
-				return errors.New("claim message channel close")
+				return nil
 			}
+
 			if msg.Key == nil {
 				return errors.New("msg does not have key")
 			}

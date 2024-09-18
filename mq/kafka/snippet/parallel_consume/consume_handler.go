@@ -44,6 +44,7 @@ func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, cla
 	pph.AddProcessor(NewBatchInsertDBStage(pph))
 
 	go pph.Start()
+	defer pph.Close() //如果消费协程退出，则pph也退出。
 
 	for {
 		select {
