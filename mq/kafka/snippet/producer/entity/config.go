@@ -63,6 +63,7 @@ func NewProducerConfig() *sarama.Config {
 	config.Producer.Compression = sarama.CompressionSnappy //消息压缩
 	// 鉴权相关设置
 	config.Net.SASL.Enable = true
+	config.Producer.Idempotent = true
 	config.Net.SASL.Handshake = true
 	config.Net.SASL.Mechanism = sarama.SASLMechanism(sarama.SASLTypeSCRAMSHA512)
 	config.Net.SASL.User = KafkaConf.User
