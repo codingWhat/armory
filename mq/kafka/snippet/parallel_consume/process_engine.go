@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"github.com/IBM/sarama"
+	"runtime"
 	"time"
 )
 
@@ -12,17 +13,31 @@ type HashMsg interface {
 
 type Processor interface {
 	Input(HashMsg)
-	Process()
 	Next() Processor
 	SetNext(processor Processor)
+	Process(hm HashMsg) HashMsg
 }
 
 type ProcessEngine interface {
 	Start()
 	AddProcessor(processor Processor)
+	Close()
 }
 
-func NewPartitionParallelHandler(poc *PartitionOffsetCommitter) *PartitionParallelHandler {
+type BaseProcessor struct {
+	next Processor
+}
+
+func (bp *BaseProcessor) Next() Processor {
+	return bp.next
+}
+
+func (bp *BaseProcessor) SetNext(processor Processor) {
+	bp.next = processor
+}
+
+func NewPartitionParallelHandler(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) *PartitionParallelHandler {
+	poc := NewPartitionOffsetCommitter(claim.Partition(), sess)
 	return &PartitionParallelHandler{
 		poc:           poc,
 		input:         make(chan *sarama.ConsumerMessage),
@@ -34,7 +49,9 @@ func NewPartitionParallelHandler(poc *PartitionOffsetCommitter) *PartitionParall
 type PartitionParallelHandler struct {
 	poc *PartitionOffsetCommitter
 
-	input      chan *sarama.ConsumerMessage
+	input chan *sarama.ConsumerMessage
+
+	dispatchCh chan Processor
 	processors Processor
 
 	batchSize     int
@@ -46,6 +63,7 @@ func (pph *PartitionParallelHandler) Input() chan *sarama.ConsumerMessage {
 }
 func (pph *PartitionParallelHandler) Close() {
 	close(pph.input)
+	close(pph.poc.input)
 }
 
 func (pph *PartitionParallelHandler) AddProcessor(processor Processor) {
@@ -63,24 +81,20 @@ func (pph *PartitionParallelHandler) AddProcessor(processor Processor) {
 
 func (pph *PartitionParallelHandler) Start() error {
 
-	msgBatch := make(map[string][]*ExtMsg, pph.batchSize)
+	msgBatch := make([]*ExtMsg, 0, pph.batchSize) // tps 2000, 8c对应8个goroutine,  每个goroutine获得 250+, batchSize: 300
 	idx := 0
-	ticker := time.NewTicker(pph.flushInterval)
+	ticker := time.NewTicker(pph.flushInterval) //1s
 	defer ticker.Stop()
 
-	var processBatchExtMsgs = func(msgBatch map[string][]*ExtMsg) {
-		for rawKey, msgs := range msgBatch {
-			if len(msgs) == 0 {
-				delete(msgBatch, rawKey)
-				continue
-			}
+	var processBatchExtMsgs = func(msgBatch []*ExtMsg) {
 
-			handleBatchMsg := make([]*ExtMsg, len(msgs))
-			//深拷贝，防止下游修改
-			copy(handleBatchMsg, msgs)
-			pph.processors.Input(NewBatchExtMsg([]byte(rawKey), msgs))
-			msgBatch[rawKey] = msgs[:0]
+		handleBatchMsg := make([]*ExtMsg, len(msgBatch))
+		//深拷贝，防止下游修改
+		copy(handleBatchMsg, msgBatch)
+		for _, msg := range handleBatchMsg {
+			pph.processors.Input(msg)
 		}
+		msgBatch = msgBatch[:0]
 		resetTicker(ticker, pph.flushInterval)
 		idx = 0
 	}
@@ -100,18 +114,17 @@ func (pph *PartitionParallelHandler) Start() error {
 				return errors.New("msg does not have key")
 			}
 
-			/*-------------------消息分发 & 批量插入 & 并行有序提交-------------------------*/
+			/*------------------- 计算:【消息批量 & 消息分组】 & 【 计算：【构建model & 计算计数】 &  io: 批量插入】 & 并行有序提交-------------------------*/
 			// msg dispatch
-			key := string(msg.Key)
-			if _, ok := msgBatch[key]; !ok {
-				msgBatch[key] = make([]*ExtMsg, 0)
+			for pph.poc.Offer(msg) != nil {
+				runtime.Gosched()
 			}
-			msgBatch[key] = append(msgBatch[key], newExtMsg(msg))
+
+			msgBatch[idx] = newExtMsg(msg)
 			idx++
 			if idx >= pph.batchSize { // 数据已经达到缓存最大值
 				processBatchExtMsgs(msgBatch)
 			}
-
 		}
 	}
 }

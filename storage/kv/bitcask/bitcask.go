@@ -377,7 +377,7 @@ func (db *DB) Get(k string) ([]byte, error) {
 		//}
 
 		//fmt.Println(f.Name(), "---->active, offset", k,
-		//	all, posInfo.FileID, posInfo.Offset)
+		//	all, posInfo.FileID, posInfo.offsets)
 		_, err := f.Seek(posInfo.Offset, 0)
 		if err != nil {
 			return nil, err
@@ -395,7 +395,7 @@ func (db *DB) Get(k string) ([]byte, error) {
 		//if err != nil {
 		//	return nil, err
 		//}
-		//fmt.Println(stat.Name(), stat.Size(), "---->archive, offset", k, all, posInfo.FileID, posInfo.Offset)
+		//fmt.Println(stat.Name(), stat.Size(), "---->archive, offset", k, all, posInfo.FileID, posInfo.offsets)
 
 		_, err := f.Seek(posInfo.Offset, 0)
 

@@ -178,7 +178,7 @@ func (db *DB) loadDataFiles() error {
 //				return err
 //			}
 //			seqNo, realKey := decodeTxnKey(record.Key)
-//			pos := &data.LogRecordPos{Offset: offset, FileID: uint32(fileId), Size: uint32(size)}
+//			pos := &data.LogRecordPos{offsets: offset, FileID: uint32(fileId), Size: uint32(size)}
 //
 //			if seqNo == NormalWriteSeq {
 //				db.updateIndex(realKey, record.Type, pos)

@@ -38,8 +38,9 @@ func (c *ConsumerGroupHandle) Cleanup(session sarama.ConsumerGroupSession) error
 func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 
 	limiter := rate.NewLimiter(rate.Every(1*time.Second), 2000)
-	poc := NewPartitionOffsetCommitter(claim.Partition(), sess)
-	pph := NewPartitionParallelHandler(poc)
+
+	//资源回收！！！
+	pph := NewPartitionParallelHandler(sess, claim)
 	pph.AddProcessor(NewBatchDataGroupStage(pph))
 	pph.AddProcessor(NewBatchInsertDBStage(pph))
 
@@ -144,7 +145,11 @@ func (poc *PartitionOffsetCommitter) Run() {
 	ticker := time.NewTicker(poc.commitInterval)
 	for {
 		select {
-		case evt := <-poc.input:
+		case evt, ok := <-poc.input:
+			if !ok {
+				return
+			}
+
 			poc.processEvt(evt)
 		case <-ticker.C:
 			poc.commit()
