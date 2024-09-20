@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/IBM/sarama"
@@ -45,6 +44,7 @@ func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, cla
 	pph.AddProcessor(NewBatchDataGroupStage(pph))
 	pph.AddProcessor(NewBatchInsertDBStage(pph))
 
+	go pph.Start()
 	defer pph.Close() //如果消费协程退出，则pph也退出。
 
 	for {
@@ -60,28 +60,9 @@ func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, cla
 			if err := limiter.Wait(c.ctx); err != nil {
 				return err
 			}
-
-			pph.Input(msg)
+			pph.Input() <- msg
 		}
 	}
-}
-
-type Msg struct {
-	ID       uint64 `json:"commentid"`
-	Content  string ` json:"content"`
-	Targetid int    `json:"targetid"`
-	Parentid uint64 ` json:"parentid"`
-	Offset   int64
-}
-
-func (m *Msg) RawKey() []byte {
-	return []byte(strconv.Itoa(m.Targetid))
-}
-
-func unSerialize(msg *sarama.ConsumerMessage) (*Msg, error) {
-	c := &Msg{}
-	err := json.Unmarshal(msg.Value, c)
-	return c, err
 }
 
 func resetTicker(ticker *time.Ticker, d time.Duration) {

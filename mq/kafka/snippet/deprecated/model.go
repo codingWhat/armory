@@ -2,7 +2,6 @@ package main
 
 import (
 	"gorm.io/gorm"
-	"strconv"
 	"time"
 )
 
@@ -17,16 +16,10 @@ type Comments struct {
 	Content   string    `gorm:"column:content" json:"content"`
 	Targetid  int       `gorm:"column:targetid;NOT NULL" json:"targetid"`
 	Parentid  uint64    `gorm:"column:parentid;NOT NULL" json:"parentid"`
-
-	Offset int64 `json:"offset"`
 }
 
 func newComment() *Comments {
 	return &Comments{}
-}
-
-func (c *Comments) RawKey() []byte {
-	return []byte(strconv.Itoa(c.Targetid))
 }
 
 func BatchInsert(comments []*Comments) error {
@@ -36,7 +29,7 @@ func BatchInsert(comments []*Comments) error {
 func BatchUpdate(comments []*Comments) error {
 	db := GetDBConn()
 	for _, comment := range comments {
-		if err := db.Model(comment).UpdateColumn("reply", gorm.Expr("reply + ?", comment.Reply)).Error; err != nil {
+		if err := db.Model(comment).Select("reply").Updates(comment).Error; err != nil {
 			return err
 		}
 	}
