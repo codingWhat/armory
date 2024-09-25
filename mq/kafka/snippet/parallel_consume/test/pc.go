@@ -25,7 +25,7 @@ func main() {
 	//消费者组
 	conf.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
 
-	cg, err := sarama.NewConsumerGroup([]string{"21.6.115.7:9092"}, "pc_million", conf)
+	cg, err := sarama.NewConsumerGroup([]string{""}, "pc_million", conf)
 	if err != nil {
 		return
 	}
