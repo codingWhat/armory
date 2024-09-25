@@ -1,4 +1,4 @@
-package main
+package parallel_consume
 
 import (
 	"context"
@@ -38,7 +38,7 @@ func (c *ConsumerGroupHandle) Cleanup(session sarama.ConsumerGroupSession) error
 
 func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 
-	limiter := rate.NewLimiter(rate.Every(1*time.Second), 2000)
+	limiter := rate.NewLimiter(2000, 2000)
 
 	//资源回收！！！
 	pph := NewPartitionParallelHandler(sess, claim)
@@ -99,7 +99,8 @@ func NewPartitionOffsetCommitter(partitionID int32, sess sarama.ConsumerGroupSes
 		pq:             pq.New(),
 		commitInterval: 1 * time.Second,
 		sess:           sess,
-		input:          make(chan *event, 20),
+		addCh:          make(chan *event, 20),
+		markCh:         make(chan *event, 20),
 	}
 
 	go poc.Run()
@@ -125,16 +126,17 @@ type PartitionOffsetCommitter struct {
 	pq *pq.PriorityQueue
 
 	Partition int32
-	input     chan *event
+	addCh     chan *event
+	markCh    chan *event
 
 	commitInterval time.Duration
 	sess           sarama.ConsumerGroupSession
 }
 
-func (poc *PartitionOffsetCommitter) Offer(msg *sarama.ConsumerMessage) error {
+func (poc *PartitionOffsetCommitter) Add(msg *sarama.ConsumerMessage) error {
 
 	ch := make(chan error)
-	poc.input <- &event{
+	poc.addCh <- &event{
 		t:       AddEvt,
 		msg:     msg,
 		errChan: ch,
@@ -145,7 +147,7 @@ func (poc *PartitionOffsetCommitter) Offer(msg *sarama.ConsumerMessage) error {
 func (poc *PartitionOffsetCommitter) MarkConsumed(offset int64) error {
 
 	ch := make(chan error)
-	poc.input <- &event{
+	poc.markCh <- &event{
 		t:       DelEvt,
 		offset:  offset,
 		errChan: ch,
@@ -164,7 +166,9 @@ func (poc *PartitionOffsetCommitter) Run() {
 	ticker := time.NewTicker(poc.commitInterval)
 	for {
 		select {
-		case evt, ok := <-poc.input:
+		case evt := <-poc.markCh:
+			poc.processEvt(evt)
+		case evt, ok := <-poc.addCh:
 			if !ok {
 				return
 			}
@@ -178,7 +182,6 @@ func (poc *PartitionOffsetCommitter) Run() {
 func (poc *PartitionOffsetCommitter) commit() {
 	for {
 		item, err := poc.pq.Pop()
-
 		if errors.Is(err, pq.ErrEmpty) {
 			break
 		}
@@ -227,7 +230,7 @@ func (poc *PartitionOffsetCommitter) processEvt(evt *event) {
 			Value:    em,
 		})
 		if err == nil {
-			fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "---->", "Recv Msg---->", poc.Partition, offset)
+			//fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "---->", "Recv Msg---->", poc.Partition, offset)
 		}
 	} else {
 		item := poc.pq.PopByKey(key)

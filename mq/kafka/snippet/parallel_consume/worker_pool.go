@@ -1,21 +1,15 @@
-package main
+package parallel_consume
 
 import (
 	"math"
+	"runtime"
 	"sync"
 	"time"
 )
 
 type WorkerPool struct {
 	workerPool []chan HashMsg
-	workerSize int
 	p          Processor
-
-	chSize int
-
-	batchMode     bool
-	batchSize     int
-	batchInterval time.Duration
 
 	mu   sync.RWMutex
 	conf *Config
@@ -23,22 +17,27 @@ type WorkerPool struct {
 
 type Config struct {
 	WorkerSize    int
+	ChSize        int
 	BatchMode     bool
 	BatchSize     int
 	BatchInterval time.Duration
 }
 
-var DefaultConfig = &Config{}
+var DefaultConfig = func() *Config {
+	return &Config{
+		WorkerSize: runtime.NumCPU(),
+		BatchMode:  false,
+	}
+}
 
-func NewWorkerPool(workerSize int, chSize int, batchMode bool) *WorkerPool {
+func NewWorkerPool(p Processor, conf *Config) *WorkerPool {
 	wp := &WorkerPool{
-		chSize:     chSize,
-		workerPool: make([]chan HashMsg, workerSize),
-		workerSize: workerSize, batchSize: 200,
-		batchMode: batchMode, batchInterval: 1 * time.Second,
+		p:          p,
+		conf:       conf,
+		workerPool: make([]chan HashMsg, 0, conf.WorkerSize),
 	}
 
-	wp.addWorker(batchMode, workerSize, chSize)
+	wp.addWorker(conf.BatchMode, conf.WorkerSize, conf.ChSize)
 
 	return wp
 }
@@ -46,7 +45,6 @@ func NewWorkerPool(workerSize int, chSize int, batchMode bool) *WorkerPool {
 func (wp *WorkerPool) addWorker(batchMode bool, workerNum int, chSize int) {
 	for i := 0; i < workerNum; i++ {
 		ch := make(chan HashMsg, chSize)
-		wp.workerPool = append(wp.workerPool, ch)
 		if batchMode {
 			go wp.RunWithBatch(ch)
 		} else {
@@ -54,7 +52,7 @@ func (wp *WorkerPool) addWorker(batchMode bool, workerNum int, chSize int) {
 		}
 		wp.mu.Lock()
 		wp.workerPool = append(wp.workerPool, ch)
-		wp.workerSize = len(wp.workerPool)
+		wp.conf.WorkerSize = len(wp.workerPool)
 		wp.mu.Unlock()
 	}
 }
@@ -65,7 +63,7 @@ func (wp *WorkerPool) UpdaterWorker(batchMode bool, workerNum int, chSize int) {
 		return
 	}
 	//必须保证一个, 不运行应该关闭退出
-	diff := workerNum - wp.workerSize
+	diff := workerNum - wp.conf.WorkerSize
 	if diff < 0 {
 		diff = int(math.Abs(float64(diff)))
 		del := wp.workerPool[:diff]
@@ -73,7 +71,7 @@ func (wp *WorkerPool) UpdaterWorker(batchMode bool, workerNum int, chSize int) {
 		// 先移除，在关闭channel
 		wp.mu.Lock()
 		wp.workerPool = wp.workerPool[:diff]
-		wp.workerSize = len(wp.workerPool)
+		wp.conf.WorkerSize = len(wp.workerPool)
 		wp.mu.Unlock()
 		for _, ch := range del {
 			close(ch)
@@ -82,6 +80,14 @@ func (wp *WorkerPool) UpdaterWorker(batchMode bool, workerNum int, chSize int) {
 	} else {
 		wp.addWorker(batchMode, workerNum, chSize)
 	}
+}
+
+func (wp *WorkerPool) Close() {
+	wp.mu.Lock()
+	for _, ch := range wp.workerPool {
+		close(ch)
+	}
+	wp.mu.Unlock()
 }
 
 func (wp *WorkerPool) Input(idx int, msgs HashMsg) {
@@ -115,9 +121,9 @@ func (b BatchHashMsg) RawKey() []byte {
 
 func (wp *WorkerPool) RunWithBatch(msgCh chan HashMsg) {
 
-	msgBatch := make([]HashMsg, 0, wp.batchSize) // tps 2000, 8c对应8个goroutine,  每个goroutine获得 250+, batchSize: 300
+	msgBatch := make([]HashMsg, wp.conf.BatchSize) // tps 2000, 8c对应8个goroutine,  每个goroutine获得 250+, batchSize: 300
 	idx := 0
-	ticker := time.NewTicker(wp.batchInterval) //1s
+	ticker := time.NewTicker(wp.conf.BatchInterval) //1s
 	defer ticker.Stop()
 
 	var processBatchExtMsgs = func(msgBatch BatchHashMsg) {
@@ -129,26 +135,26 @@ func (wp *WorkerPool) RunWithBatch(msgCh chan HashMsg) {
 		if wp.p.Next() != nil && out != nil {
 			wp.p.Next().Input(out)
 		}
-		msgBatch = msgBatch[:0]
-		resetTicker(ticker, wp.batchInterval)
+
+		resetTicker(ticker, wp.conf.BatchInterval)
 		idx = 0
 	}
 
 	for {
 		select {
-		case <-ticker.C:
-			if idx > 0 {
-				processBatchExtMsgs(msgBatch)
-			}
-
 		case hm, ok := <-msgCh:
 			if !ok {
 				return
 			}
 			msgBatch[idx] = hm
 			idx++
-			if idx >= wp.batchSize { // 数据已经达到缓存最大值
+			if idx >= wp.conf.BatchSize { // 数据已经达到缓存最大值
 				processBatchExtMsgs(msgBatch)
+			}
+
+		case <-ticker.C:
+			if idx > 0 {
+				processBatchExtMsgs(msgBatch[:idx])
 			}
 		}
 	}

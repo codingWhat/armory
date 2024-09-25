@@ -67,7 +67,7 @@ func (c *ConsumerGroupHandle) ConsumeClaim(sess sarama.ConsumerGroupSession, cla
 
 			/*-------------------模拟消息有序提交-------------------------*/
 			//写入优先级队列。 注意必须是手动提交模式
-			if err := poc.Offer(msg); err != nil {
+			if err := poc.Add(msg); err != nil {
 				panic(err) //for test
 			}
 			//模拟消息处理
@@ -161,7 +161,8 @@ func NewPartitionOffsetCommitter(partitionID int32, sess sarama.ConsumerGroupSes
 		pq:             pq.New(),
 		commitInterval: 1 * time.Second,
 		sess:           sess,
-		input:          make(chan *event, 20),
+		addCh:          make(chan *event, 20),
+		markCh:         make(chan *event, 20),
 	}
 
 	go withRecover(poc.Run)
@@ -188,16 +189,17 @@ type PartitionOffsetCommitter struct {
 	pq *pq.PriorityQueue
 
 	Partition int32
-	input     chan *event
+	addCh     chan *event
+	markCh    chan *event
 
 	commitInterval time.Duration
 	sess           sarama.ConsumerGroupSession
 }
 
-func (poc *PartitionOffsetCommitter) Offer(msg *sarama.ConsumerMessage) error {
+func (poc *PartitionOffsetCommitter) Add(msg *sarama.ConsumerMessage) error {
 
 	ch := make(chan error)
-	poc.input <- &event{
+	poc.addCh <- &event{
 		t:       AddEvt,
 		msg:     msg,
 		errChan: ch,
@@ -208,7 +210,7 @@ func (poc *PartitionOffsetCommitter) Offer(msg *sarama.ConsumerMessage) error {
 func (poc *PartitionOffsetCommitter) MarkConsumed(offset int64) error {
 
 	ch := make(chan error)
-	poc.input <- &event{
+	poc.markCh <- &event{
 		t:       DelEvt,
 		offset:  offset,
 		errChan: ch,
@@ -221,7 +223,9 @@ func (poc *PartitionOffsetCommitter) Run() {
 	ticker := time.NewTicker(poc.commitInterval)
 	for {
 		select {
-		case evt := <-poc.input:
+		case evt := <-poc.addCh:
+			poc.processEvt(evt)
+		case evt := <-poc.markCh:
 			poc.processEvt(evt)
 		case <-ticker.C:
 			poc.commit()
@@ -275,7 +279,7 @@ func (poc *PartitionOffsetCommitter) processEvt(evt *event) {
 			Value:    &ExtMsg{msg: evt.msg},
 		})
 		if err == nil {
-			fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "---->", "Recv Msg---->", poc.Partition, offset)
+			//fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "---->", "Recv Msg---->", poc.Partition, offset)
 		}
 	} else {
 		item := poc.pq.PopByKey(key)

@@ -1,4 +1,4 @@
-package main
+package parallel_consume
 
 import (
 	"github.com/IBM/sarama"
@@ -15,6 +15,7 @@ type Processor interface {
 	Next() Processor
 	SetNext(processor Processor)
 	Process(hm HashMsg) HashMsg
+	Close()
 }
 
 type ProcessEngine interface {
@@ -39,7 +40,6 @@ func NewPartitionParallelHandler(sess sarama.ConsumerGroupSession, claim sarama.
 	poc := NewPartitionOffsetCommitter(claim.Partition(), sess)
 	return &PartitionParallelHandler{
 		poc:           poc,
-		input:         make(chan *sarama.ConsumerMessage),
 		batchSize:     100,
 		flushInterval: 1 * time.Second,
 	}
@@ -47,8 +47,6 @@ func NewPartitionParallelHandler(sess sarama.ConsumerGroupSession, claim sarama.
 
 type PartitionParallelHandler struct {
 	poc *PartitionOffsetCommitter
-
-	input chan *sarama.ConsumerMessage
 
 	dispatchCh chan Processor
 	processors Processor
@@ -59,7 +57,7 @@ type PartitionParallelHandler struct {
 
 func (pph *PartitionParallelHandler) Input(msg *sarama.ConsumerMessage) {
 	// msg dispatch
-	for pph.poc.Offer(msg) != nil {
+	for pph.poc.Add(msg) != nil {
 		runtime.Gosched()
 	}
 
@@ -67,8 +65,7 @@ func (pph *PartitionParallelHandler) Input(msg *sarama.ConsumerMessage) {
 }
 
 func (pph *PartitionParallelHandler) Close() {
-	close(pph.input)
-	close(pph.poc.input)
+	close(pph.poc.addCh)
 }
 
 func (pph *PartitionParallelHandler) AddProcessor(processor Processor) {
