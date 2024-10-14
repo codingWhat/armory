@@ -51,7 +51,7 @@ func NewBatchInsertDBStage(pph *PartitionParallelHandler) Processor {
 	conf.WorkerSize = 10
 	conf.BatchMode = true
 	conf.BatchInterval = 1 * time.Second
-	conf.BatchSize = 2000
+	conf.BatchSize = 10000
 	p.wp = NewWorkerPool(p, conf)
 
 	return p
