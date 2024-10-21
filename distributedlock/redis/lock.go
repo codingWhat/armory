@@ -77,9 +77,10 @@ func (l *lock) Lock(ctx context.Context, key string, owner string, ttl time.Dura
 func (l *lock) UnLock(ctx context.Context, key string, owner string) error {
 	script := `
     if redis.call("hexists", KEYS[1], ARGV[1]) == 0 then
-        return nil
+		redis.call("hdel", KEYS[1], ARGV[1])
+		return 1
     elseif redis.call("hincrby", KEYS[1], ARGV[1], -1) > 0 then
-        return 0
+        return 1
     else
         redis.call("del", KEYS[1])
         return 1

@@ -61,11 +61,11 @@ func (l *lock) Lock(ctx context.Context, key string, owner string, ttl time.Dura
 		if err != nil {
 			return errors.WithMessage(err, "update reentrant failed.")
 		}
+		//释放上次的互斥锁，需要重新加锁
 		err = l.releaseSession(key, owner)
 		if err != nil {
 			return errors.WithMessage(err, "Lock() releaseSession failed.")
 		}
-		return nil
 	} else {
 		for {
 			var reentrant int

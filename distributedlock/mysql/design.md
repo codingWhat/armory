@@ -93,7 +93,7 @@ V1-V4的缺点:
 通知机制的原理是锁持有者需要保持Session,开启事务，对锁`for update`操作。
 当其他owner执行insert时会被阻塞，原因是锁持有者执行了`for update`加了互斥锁。
 
-解锁时，当前锁持有者提交事务，其他owner开始抢占锁
+解锁时，当前锁持有者提交事务，其他owner开始抢占锁  
 Lock:
 ```sql
     insert into tbl_distribute_lock (rkey, owner, expiredAt) values (xxx, xxx,xxx)
