@@ -23,7 +23,7 @@ func (c *Client) MGet(ctx context.Context, keys []string) (map[string]interface{
 
 func (c *Client) MGetWithLoadFn(ctx context.Context, keys []string, loadFn CustomLoadFunc) (map[string]interface{}, error) {
 	keysNum := len(keys)
-	lcData, missedKeys, err := c.loadFromLocalCache(keys...)
+	lcData, missedKeys, err := c.loadFromLocalCacheWithKeys(keys...)
 	if err != nil {
 		return nil, err
 	}

@@ -2,17 +2,31 @@ package guarder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
+	"time"
 )
 
+type Lease struct {
+}
+
+// Grant 获取租约
+func (c *Client) Grant(ctx context.Context, key string, ttl time.Duration, loadFn CustomLoadFunc) {
+
+}
+
 func (c *Client) ZRevRangeWithLoad(ctx context.Context, key string, start, stop int, loadFn CustomLoadFunc) ([]string, error) {
-	lcData, _, err := c.loadFromLocalCache(key)
+	lcData, err := c.memStore.Get(key)
 	if err != nil {
 		return nil, err
 	}
-	if len(lcData) > 0 {
-		return lcData[key].([]string), nil
+	v, ok := lcData.([]string)
+	if !ok {
+		return nil, errors.New(fmt.Sprintf("[ZRevRangeWithLoad] data's format is not invalid. data: %v", lcData))
+	}
+	if v != nil {
+		return v, nil
 	}
 
 	reply, err := c.redisClient.Do(ctx, "ZREVRANGE", key, start, stop)
@@ -46,5 +60,4 @@ func (c *Client) ZRevRangeWithLoad(ctx context.Context, key string, start, stop 
 
 	c.save2LocalCache(key, dbData[key].([]string))
 	return dbData[key].([]string), nil
-
 }

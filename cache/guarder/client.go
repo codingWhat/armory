@@ -30,6 +30,7 @@ type CustomLoadFunc func(ctx context.Context, client interface{}, key ...string)
 type Client struct {
 	redisClient RedisClient
 	memStore    MemoryStore
+	ops         Option
 
 	sg             *singleflight.Group
 	localCacheTTL  time.Duration
@@ -68,8 +69,8 @@ func (c *Client) mergeReq(ctx context.Context, keys []string, loadFn CustomLoadF
 	return sgData, err
 }
 
-func (c *Client) loadFromLocalCache(keys ...string) (map[string]interface{}, []string, error) {
-	var missedKeys []string
+func (c *Client) loadFromLocalCacheWithKeys(keys ...string) (map[string]interface{}, []string, error) {
+	missedKeys := make([]string, 0, len(keys))
 	ret := make(map[string]interface{}, len(keys))
 	for _, key := range keys {
 		lcCacheData, err := c.memStore.Get(key)
@@ -82,7 +83,7 @@ func (c *Client) loadFromLocalCache(keys ...string) (map[string]interface{}, []s
 			ret[key] = lcCacheData
 		}
 	}
-	return ret, missedKeys, nil
+	return ret, missedKeys[:], nil
 }
 
 func (c *Client) save2LocalCache(k string, v interface{}) {
