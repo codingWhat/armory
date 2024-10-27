@@ -18,7 +18,7 @@ func main() {
 				panic(err)
 			}
 			err := entity.GetProducerPool().SetProducer(&entity.ProducerConfig{
-				Name: "producer1",
+				name: "producer1",
 			})
 			if err != nil {
 				return

@@ -2,23 +2,16 @@ package guarder
 
 import (
 	"context"
-	"golang.org/x/sync/singleflight"
+	"github.com/codingWhat/armory/cache/guarder/redis"
 	"hash/crc32"
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	redigo "github.com/gomodule/redigo/redis"
+	"golang.org/x/sync/singleflight"
 )
-
-// Client redis请求接口
-type RedisClient interface {
-	// Do sends a command to the server and returns the received reply. The Redis command reference
-	// https://pkg.go.dev/github.com/gomodule/redigo/redis#hdr-Executing_Commands
-	Do(ctx context.Context, cmd string, args ...interface{}) (reply interface{}, err error)
-	Pipeline(ctx context.Context) (redigo.Conn, error)
-}
 
 type MemoryStore interface {
 	Set(key string, val interface{}, ttl time.Duration) error
@@ -28,30 +21,69 @@ type MemoryStore interface {
 type CustomLoadFunc func(ctx context.Context, client interface{}, key ...string) (map[string]interface{}, error)
 
 type Client struct {
-	redisClient RedisClient
-	memStore    MemoryStore
-	ops         Option
+	remoteClient redis.RedisClient
+	memStore     MemoryStore
 
 	sg             *singleflight.Group
-	localCacheTTL  time.Duration
-	remoteCacheTTL time.Duration
+	localCacheTTL  atomic.Int32
+	remoteCacheTTL atomic.Int32
 	randFactor     int
+
+	taskManger *TaskManger
+
+	ops *Options
 }
 
-func New(redis RedisClient, store MemoryStore) *Client {
+func New(redis redis.RedisClient, options ...Option) *Client {
 
-	return &Client{
-		redisClient: redis,
-		memStore:    store,
+	currOpts := &Options{}
+	for _, op := range options {
+		op(currOpts)
 	}
+
+	client := &Client{
+		remoteClient: redis,
+		ops:          currOpts,
+		randFactor:   30,
+	}
+
+	if currOpts.EnableLocalCache {
+		client.memStore = NewSimpleMemoryStore()
+	}
+	if currOpts.LocalCache != nil {
+		client.memStore = currOpts.LocalCache
+	}
+
+	if currOpts.LocalCacheTTL.Seconds() > 0 {
+		client.localCacheTTL.Store(int32(currOpts.LocalCacheTTL.Seconds()))
+	}
+
+	client.remoteCacheTTL.Store(int32(15))
+	if currOpts.RemoteCacheTTL.Seconds() > 0 {
+		client.remoteCacheTTL.Store(int32(currOpts.RemoteCacheTTL.Seconds()))
+	}
+
+	client.taskManger = NewTaskManager()
+
+	return client
 }
-func (c *Client) SetCacheTTL(ttl time.Duration) *Client {
-	c.remoteCacheTTL = ttl
+
+// AddCronTask 设置定期更新任务
+func (c *Client) AddCronTask(ctx context.Context, taskName string, interval time.Duration, fn func()) {
+	c.taskManger.AddTask(ctx, NewCronTask(taskName, interval, fn, c.taskManger))
+}
+
+func (c *Client) RemoveCronTask(ctx context.Context, taskName string) {
+	c.taskManger.RemoveTask(ctx, taskName)
+}
+
+func (c *Client) SetCacheTTL(ttl int32) *Client {
+	c.remoteCacheTTL.Store(ttl)
 	return c
 }
 
-func (c *Client) SetLocalCacheTTL(ttl time.Duration) *Client {
-	c.localCacheTTL = ttl
+func (c *Client) SetLocalCacheTTL(ttl int32) *Client {
+	c.localCacheTTL.Store(ttl)
 	return c
 }
 
@@ -87,12 +119,19 @@ func (c *Client) loadFromLocalCacheWithKeys(keys ...string) (map[string]interfac
 }
 
 func (c *Client) save2LocalCache(k string, v interface{}) {
-	_ = c.memStore.Set(k, v, c.calculateRandTime(c.localCacheTTL))
+	ttl := c.localCacheTTL.Load()
+	_ = c.memStore.Set(k, v, c.calculateRandTime(time.Duration(ttl)*time.Second))
 }
 
 func (c *Client) batchSave2LocalCache(data map[string]interface{}) {
 	for k, v := range data {
 		c.save2LocalCache(k, v)
+	}
+}
+
+func (c *Client) Close() {
+	if c.taskManger != nil {
+		c.taskManger.Close()
 	}
 }
 

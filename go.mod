@@ -5,7 +5,7 @@ go 1.22.4
 require (
 	git.woa.com/polaris/polaris-go/v2 v2.6.5
 	github.com/IBM/sarama v1.43.0
-	github.com/RussellLuo/timingwheel v0.0.0-20191022104228-f534fd34a762
+	github.com/RussellLuo/timingwheel v0.0.0-20220218152713-54845bda3108
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/alibaba/sentinel-golang v1.0.4
 	github.com/allegro/bigcache/v3 v3.1.0
@@ -107,6 +107,7 @@ require (
 	github.com/prometheus/common v0.30.0 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.2 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect

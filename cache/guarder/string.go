@@ -2,6 +2,7 @@ package guarder
 
 import (
 	"context"
+	"time"
 )
 
 func (c *Client) MGet(ctx context.Context, keys []string) (map[string]interface{}, error) {
@@ -9,7 +10,7 @@ func (c *Client) MGet(ctx context.Context, keys []string) (map[string]interface{
 	for i, ele := range keys {
 		paramInterfaceList[i] = ele
 	}
-	redisResult, err := c.redisClient.Do(ctx, "MGET", paramInterfaceList)
+	redisResult, err := c.remoteClient.Do(ctx, "MGET", paramInterfaceList)
 	if err != nil {
 		return nil, err
 	}
@@ -54,17 +55,18 @@ func (c *Client) MGetWithLoadFn(ctx context.Context, keys []string, loadFn Custo
 	sgData, err := c.mergeReq(ctx, missedKeys, loadFn)
 	dbData := sgData.(map[string]interface{})
 	//异步更新到Redis，
-	Async(
+	go WithRecover(
 		func() {
 			ctx := context.Background()
-			conn, _ := c.redisClient.Pipeline(ctx)
+			ttl := time.Duration(c.remoteCacheTTL.Load())
+			conn, _ := c.remoteClient.Pipeline(ctx)
 			for k, v := range dbData {
-				conn.Send("set", k, v, "ex", c.calculateRandTime(c.remoteCacheTTL).Seconds())
+				_ = conn.Send("set", k, v, "ex", c.calculateRandTime(ttl).Seconds())
 			}
-			conn.Flush()
+			_ = conn.Flush()
 			num := len(dbData)
 			for i := 0; i < num; i++ {
-				conn.Receive()
+				_, _ = conn.Receive()
 			}
 		},
 	)

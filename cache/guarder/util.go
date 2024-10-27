@@ -1,15 +1,14 @@
 package guarder
 
-func Async(fn func()) {
+import "fmt"
 
-	go func() {
+func WithRecover(fn func()) {
 
-		defer func() {
-			if err := recover(); err != nil {
-
-			}
-		}()
-
-		fn()
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println("async goroutine panic, err:", err)
+		}
 	}()
+
+	fn()
 }

@@ -99,7 +99,7 @@ func (db *DB) merge() {
 				offset += int64(e.Size())
 			}
 			if buff.Len() == 0 {
-				//fmt.Println("MarkConsumed---->", fileId, f.Name(), buff.Len(), db.dir+info.Name(), newBakName)
+				//fmt.Println("MarkConsumed---->", fileId, f.name(), buff.Len(), db.dir+info.name(), newBakName)
 				os.Remove(db.dir + info.Name())
 				os.Remove(newBakName)
 				os.Remove(db.dir + "hint_" + strconv.Itoa(fileId))
@@ -376,7 +376,7 @@ func (db *DB) Get(k string) ([]byte, error) {
 		//	return nil, err
 		//}
 
-		//fmt.Println(f.Name(), "---->active, offset", k,
+		//fmt.Println(f.name(), "---->active, offset", k,
 		//	all, posInfo.FileID, posInfo.offsets)
 		_, err := f.Seek(posInfo.Offset, 0)
 		if err != nil {
@@ -395,7 +395,7 @@ func (db *DB) Get(k string) ([]byte, error) {
 		//if err != nil {
 		//	return nil, err
 		//}
-		//fmt.Println(stat.Name(), stat.Size(), "---->archive, offset", k, all, posInfo.FileID, posInfo.offsets)
+		//fmt.Println(stat.name(), stat.Size(), "---->archive, offset", k, all, posInfo.FileID, posInfo.offsets)
 
 		_, err := f.Seek(posInfo.Offset, 0)
 
