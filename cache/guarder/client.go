@@ -2,7 +2,7 @@ package guarder
 
 import (
 	"context"
-	"github.com/codingWhat/armory/cache/guarder/redis"
+	"github.com/codingWhat/armory/cache/guarder/localcache"
 	"hash/crc32"
 	"math/rand"
 	"strconv"
@@ -11,25 +11,22 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
-)
 
-type MemoryStore interface {
-	Set(key string, val interface{}, ttl time.Duration) error
-	Get(key string) (interface{}, error)
-}
+	"github.com/codingWhat/armory/cache/guarder/redis"
+)
 
 type CustomLoadFunc func(ctx context.Context, client interface{}, key ...string) (map[string]interface{}, error)
 
 type Client struct {
 	remoteClient redis.RedisClient
-	memStore     MemoryStore
+	memStore     localcache.MemoryStore
 
 	sg             *singleflight.Group
 	localCacheTTL  atomic.Int32
 	remoteCacheTTL atomic.Int32
 	randFactor     int
 
-	taskManger *TaskManger
+	refresher *Refresher
 
 	ops *Options
 }
@@ -48,7 +45,7 @@ func New(redis redis.RedisClient, options ...Option) *Client {
 	}
 
 	if currOpts.EnableLocalCache {
-		client.memStore = NewSimpleMemoryStore()
+		client.memStore = localcache.NewSimpleMemoryStore()
 	}
 	if currOpts.LocalCache != nil {
 		client.memStore = currOpts.LocalCache
@@ -63,18 +60,18 @@ func New(redis redis.RedisClient, options ...Option) *Client {
 		client.remoteCacheTTL.Store(int32(currOpts.RemoteCacheTTL.Seconds()))
 	}
 
-	client.taskManger = NewTaskManager()
+	client.refresher = NewRefresher()
 
 	return client
 }
 
 // AddCronTask 设置定期更新任务
 func (c *Client) AddCronTask(ctx context.Context, taskName string, interval time.Duration, fn func()) {
-	c.taskManger.AddTask(ctx, NewCronTask(taskName, interval, fn, c.taskManger))
+	c.refresher.AddTask(ctx, NewCronTask(taskName, interval, fn, c.refresher))
 }
 
 func (c *Client) RemoveCronTask(ctx context.Context, taskName string) {
-	c.taskManger.RemoveTask(ctx, taskName)
+	c.refresher.RemoveTask(ctx, taskName)
 }
 
 func (c *Client) SetCacheTTL(ttl int32) *Client {
@@ -130,9 +127,11 @@ func (c *Client) batchSave2LocalCache(data map[string]interface{}) {
 }
 
 func (c *Client) Close() {
-	if c.taskManger != nil {
-		c.taskManger.Close()
+	if c.refresher == nil {
+		return
 	}
+
+	c.refresher.Close()
 }
 
 func mergeInterfaceMap(a map[string]interface{}, b map[string]interface{}) map[string]interface{} {

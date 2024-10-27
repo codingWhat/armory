@@ -1,10 +1,13 @@
 package guarder
 
-import "time"
+import (
+	"github.com/codingWhat/armory/cache/guarder/localcache"
+	"time"
+)
 
 type Options struct {
 	EnableLocalCache bool
-	LocalCache       MemoryStore
+	LocalCache       localcache.MemoryStore
 
 	LocalCacheTTL  time.Duration
 	RemoteCacheTTL time.Duration
@@ -17,7 +20,7 @@ func WithEnableLocalCache() Option {
 		ops.EnableLocalCache = true
 	}
 }
-func WithLocalCache(lc MemoryStore) Option {
+func WithLocalCache(lc localcache.MemoryStore) Option {
 	return func(ops *Options) {
 		ops.LocalCache = lc
 	}

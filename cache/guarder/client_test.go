@@ -49,6 +49,15 @@ func TestClient(t *testing.T) {
 		time.Sleep(5 * time.Second)
 	}
 
+	for i := 0; i < 10; i++ {
+		revRange, err := client.ZRevRangeWithLoad(ctx, "aaa", 0, 1, func(ctx context.Context, client interface{}, key ...string) (map[string]interface{}, error) {
+			// todo db ops
+			return nil, nil
+		})
+		fmt.Println(revRange, err)
+		time.Sleep(5 * time.Second)
+	}
+
 	//if err != nil {
 	//	return
 	//}

@@ -1,10 +1,11 @@
-package main
+package simple
 
 import (
 	"sync/atomic"
 	"unsafe"
 )
 
+// 存在内存问题，会开辟很多Node，GC
 type Node struct {
 	value interface{}
 	next  unsafe.Pointer

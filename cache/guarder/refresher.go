@@ -3,7 +3,6 @@ package guarder
 import (
 	"context"
 	"github.com/RussellLuo/timingwheel"
-	"github.com/robfig/cron/v3"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,10 +13,11 @@ type Task struct {
 	name      string
 	Run       func()
 	interval  time.Duration
-	refresher *TaskManger
+	refresher *Refresher
+	timer     *timingwheel.Timer
 }
 
-func NewTimerTask(name string, ttl time.Duration, fn func(), r *TaskManger) *Task {
+func NewTimerTask(name string, ttl time.Duration, fn func(), r *Refresher) *Task {
 	return &Task{
 		name:      name,
 		interval:  ttl,
@@ -26,7 +26,7 @@ func NewTimerTask(name string, ttl time.Duration, fn func(), r *TaskManger) *Tas
 	}
 }
 
-func NewCronTask(name string, ttl time.Duration, fn func(), r *TaskManger) *Task {
+func NewCronTask(name string, ttl time.Duration, fn func(), r *Refresher) *Task {
 	return &Task{
 		isCron:    true,
 		name:      name,
@@ -43,26 +43,26 @@ func (t *Task) AfterRun(ctx context.Context) {
 	t.refresher.AddTask(ctx, t)
 }
 
-type TaskManger struct {
-	tw   *timingwheel.TimingWheel
-	cron *cron.Cron
+type Refresher struct {
+	tw *timingwheel.TimingWheel
 
-	timers map[string]*timingwheel.Timer
-	mu     sync.RWMutex
+	tasks map[string]*Task
+
+	mu sync.RWMutex
 
 	isClosed atomic.Bool
 }
 
-func NewTaskManager() *TaskManger {
+func NewRefresher() *Refresher {
 	tw := timingwheel.NewTimingWheel(time.Second, 3600)
 	tw.Start()
-	return &TaskManger{
-		tw:     tw,
-		timers: make(map[string]*timingwheel.Timer),
+	return &Refresher{
+		tw:    tw,
+		tasks: make(map[string]*Task),
 	}
 }
 
-func (r *TaskManger) AddTask(ctx context.Context, task *Task) {
+func (r *Refresher) AddTask(ctx context.Context, task *Task) {
 	select {
 	case <-ctx.Done():
 		return
@@ -70,36 +70,36 @@ func (r *TaskManger) AddTask(ctx context.Context, task *Task) {
 	}
 
 	r.mu.Lock()
-	timer := r.tw.AfterFunc(task.interval, func() {
+	task.timer = r.tw.AfterFunc(task.interval, func() {
 		task.Run()
 		task.AfterRun(ctx)
 
 	})
-	r.timers[task.name] = timer
+	r.tasks[task.name] = task
 	r.mu.Unlock()
 }
 
-func (r *TaskManger) RemoveTask(ctx context.Context, taskName string) {
+func (r *Refresher) RemoveTask(ctx context.Context, taskName string) {
 	select {
 	case <-ctx.Done():
 		return
 	default:
 	}
 	r.mu.Lock()
-	timer, ok := r.timers[taskName]
+	task, ok := r.tasks[taskName]
 	if ok {
-		timer.Stop()
-		delete(r.timers, taskName)
+		task.timer.Stop()
+		delete(r.tasks, taskName)
 	}
 	r.mu.Unlock()
 }
 
-func (r *TaskManger) Close() {
+func (r *Refresher) Close() {
 	if r.isClosed.Load() {
 		return
 	}
 
 	r.isClosed.Store(true)
 	r.tw.Stop()
-	r.timers = make(map[string]*timingwheel.Timer)
+	r.tasks = make(map[string]*Task)
 }
