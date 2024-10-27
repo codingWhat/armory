@@ -5,7 +5,6 @@
 其实缓存场景无非就是如下几类，为何不设计一个通用框架，避免重复工作呢，本项目由此而诞生:
 ### 缓存模式
  - Local Cache -> RemoteCache
- - RemoteCache -> DB
  - Local Cache -> RemoteCache -> DB
 ### 缓存问题
  - 缓存雪崩
