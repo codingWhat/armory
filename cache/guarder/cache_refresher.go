@@ -8,17 +8,19 @@ import (
 	"time"
 )
 
-type Task struct {
+// RefreshTask 刷新缓存任务
+type RefreshTask struct {
 	isCron    bool
 	name      string
 	Run       func()
 	interval  time.Duration
-	refresher *Refresher
+	refresher *CacheRefresher
 	timer     *timingwheel.Timer
 }
 
-func NewTimerTask(name string, ttl time.Duration, fn func(), r *Refresher) *Task {
-	return &Task{
+// NewTimerTask 定时刷新
+func NewTimerTask(name string, ttl time.Duration, fn func(), r *CacheRefresher) *RefreshTask {
+	return &RefreshTask{
 		name:      name,
 		interval:  ttl,
 		Run:       fn,
@@ -26,8 +28,9 @@ func NewTimerTask(name string, ttl time.Duration, fn func(), r *Refresher) *Task
 	}
 }
 
-func NewCronTask(name string, ttl time.Duration, fn func(), r *Refresher) *Task {
-	return &Task{
+// NewCronTask 周期刷新
+func NewCronTask(name string, ttl time.Duration, fn func(), r *CacheRefresher) *RefreshTask {
+	return &RefreshTask{
 		isCron:    true,
 		name:      name,
 		interval:  ttl,
@@ -36,33 +39,33 @@ func NewCronTask(name string, ttl time.Duration, fn func(), r *Refresher) *Task 
 	}
 }
 
-func (t *Task) AfterRun(ctx context.Context) {
+func (t *RefreshTask) AfterRun(ctx context.Context) {
 	if !t.isCron {
 		return
 	}
 	t.refresher.AddTask(ctx, t)
 }
 
-type Refresher struct {
-	tw *timingwheel.TimingWheel
-
-	tasks map[string]*Task
-
-	mu sync.RWMutex
+// CacheRefresher  缓存刷新器
+type CacheRefresher struct {
+	tw    *timingwheel.TimingWheel
+	tasks map[string]*RefreshTask
+	mu    sync.RWMutex
 
 	isClosed atomic.Bool
 }
 
-func NewRefresher() *Refresher {
+// NewRefresher 实例化缓存刷新器
+func NewRefresher() *CacheRefresher {
 	tw := timingwheel.NewTimingWheel(time.Second, 3600)
 	tw.Start()
-	return &Refresher{
+	return &CacheRefresher{
 		tw:    tw,
-		tasks: make(map[string]*Task),
+		tasks: make(map[string]*RefreshTask),
 	}
 }
 
-func (r *Refresher) AddTask(ctx context.Context, task *Task) {
+func (r *CacheRefresher) AddTask(ctx context.Context, task *RefreshTask) {
 	select {
 	case <-ctx.Done():
 		return
@@ -79,7 +82,7 @@ func (r *Refresher) AddTask(ctx context.Context, task *Task) {
 	r.mu.Unlock()
 }
 
-func (r *Refresher) RemoveTask(ctx context.Context, taskName string) {
+func (r *CacheRefresher) RemoveTask(ctx context.Context, taskName string) {
 	select {
 	case <-ctx.Done():
 		return
@@ -94,12 +97,12 @@ func (r *Refresher) RemoveTask(ctx context.Context, taskName string) {
 	r.mu.Unlock()
 }
 
-func (r *Refresher) Close() {
+func (r *CacheRefresher) Close() {
 	if r.isClosed.Load() {
 		return
 	}
 
 	r.isClosed.Store(true)
 	r.tw.Stop()
-	r.tasks = make(map[string]*Task)
+	r.tasks = make(map[string]*RefreshTask)
 }

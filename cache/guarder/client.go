@@ -26,7 +26,7 @@ type Client struct {
 	remoteCacheTTL atomic.Int32
 	randFactor     int
 
-	refresher *Refresher
+	refresher *CacheRefresher
 
 	ops *Options
 }
