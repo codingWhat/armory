@@ -229,14 +229,15 @@ func (c *cache) Set(ctx context.Context, k string, v any, ttl time.Duration) boo
 }
 
 func (c *cache) Del(k string) {
+	kef := &keyExtendFunc{key: k, afterDo: nil}
 	if c.isSync {
 		waiter := waiterPool.Get().(*sync.WaitGroup)
-		c.delEvtCh <- &keyExtendFunc{key: k, afterDo: waiter.Done}
+		kef.afterDo = waiter.Done
+		c.delEvtCh <- kef
 		waiter.Wait()
 		return
 	}
-
-	c.delEvtCh <- &keyExtendFunc{key: k, afterDo: nil}
+	c.delEvtCh <- kef
 }
 
 func (c *cache) Get(k string) (any, error) {
