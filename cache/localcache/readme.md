@@ -32,6 +32,7 @@
 # 实践出真知
 接下来围绕上述三个问题来设计我们自己的高性能本地缓存库。
 ## 设计目标
+- 适用读多写少场景
 - 高性能, 减少锁竞争
 - 使用简单，配置不能太复杂，要开箱即用
 - 支持按key设置过期时间
@@ -49,13 +50,16 @@
 ```golang
 
 type Cache interface {
-	Set(k string, v any, ttl time.Duration) bool
+	Set(ctx context.Context, k string, v any, ttl time.Duration) bool
 	Get(k string) (v any, err error)
 	Del(k string)
 	Len() uint64
 	Close()
 }
 ```
+Set方法可以通过context控制接口超时，防止过长时间的阻塞。
+
+
 ### 核心数据结构
 #### cache
 cache中核心结构为store、policy、expireKeyTimers模块, store负责存储引擎的实现，policy负责淘汰机制，expireKeyTimers管理过期清理的定时任务，这三者共同组成了缓存库基础骨架。
@@ -79,7 +83,7 @@ type cache struct {
 ```
 #### store - 存储引擎实现
 store 提供增删改查的接口，可以根据自己的需求实现对应的接口，比如我们这里用就是shardedMap, 通过分片来降低锁的粒度, 减少锁竞争。
-```azure
+```golang
 type store interface {
     set(k string, v any)
     get(k string) (any, bool)
@@ -158,18 +162,20 @@ fnv64 vs xxhash
 采用sync.Pool池化ringbuffer对象，避免频繁创建对象
 
 ### 压测对比
-| 压测case                                              | 操作次数      | 单次耗时                |
-|-----------------------------------------------------|-----------|---------------------|
-| BenchmarkSyncMapSetParallelForStruct-10             | 	 1330215 | 	       907.6 ns/op |
-| BenchmarkFreeCacheSetParallelForStruct-10           | 	 2191702 | 	       549.8 ns/op |
-| BenchmarkBigCacheSetParallelForStruct-10            | 	 2250765 | 	       528.6 ns/op |
-| <strong>BenchmarkLCSetParallelForStruct-10</strong> | 	  590721 | 	      2114 ns/op   |
-| BenchmarkSyncMapGetParallelForStruct-10             |      	 3960368|	       313.6 ns/op|
-| BenchmarkFreeCacheGetParallelForStruct-10           |    	 2146406|	       545.5 ns/op|
-| BenchmarkBigCacheGetParallelForStruct-10            |     	 2329698|	       516.4 ns/op|
-| <strong>BenchmarkLCGetParallelForStruct-10</strong> |           	 2386426|	       475.1 ns/op|
 
-经过压测分析，在写入数据由于我们采用的是同步模式，对比其他库有一些弱势，但是在读取时由于不需要序列化操作，相比Zero-Gc要快些。
+| 压测case                                 | 操作次数   | 单次耗时 (ns/op) | 内存分配 (B/op) | 分配次数 |
+|------------------------------------------|------------|------------------|-----------------|----------|
+| BenchmarkSyncMapSetParallelForStruct-10  | 1,576,032  | 719.3            | 76              | 5        |
+| **BenchmarkRistrettoSetParallelForStruct-10** | 716,690    | 1,642            | 369             | 11       |
+| BenchmarkFreeCacheSetParallelForStruct-10| 2,122,884  | 562.7            | 61              | 4        |
+| BenchmarkBigCacheSetParallelForStruct-10 | 2,206,600  | 546.9            | 200             | 4        |
+| **BenchmarkLCSetParallelForStruct-10**   | 914,626    | 1,279            | 282             | 9        |
+| BenchmarkSyncMapGetParallelForStruct-10  | 3,933,157  | 305.5            | 24              | 1        |
+| BenchmarkFreeCacheGetParallelForStruct-10| 2,159,518  | 577.2            | 263             | 7        |
+| BenchmarkBigCacheGetParallelForStruct-10 | 2,218,573  | 539.1            | 279             | 8        |
+| **BenchmarkRistrettoGetParallelForStruct-10** | 3,195,711  | 379.0            | 31              | 1        |
+| **BenchmarkLCGetParallelForStruct-10**   | 2,233,429  | 530.5            | 31              | 2        |
 
-### 未来展望
-从上述压测结果可以分析得出在高并发写场景下，跟其他主流库相比吞吐较低，主要原因是因为底层channel并发操作性能不佳，虽说本地缓存面向的是读多写少的场景，但如果有些场景对写的要求很高，可以用无锁队列替换。
+
+### 总结
+在同步模式下压测分析得出，写入方面对比其他库有一些弱势，但是在读取时性能也接近主流库的性能符合预期，适合读多写少的场景。

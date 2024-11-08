@@ -24,8 +24,8 @@ func (sm *safeMap) set(k string, v any) {
 }
 func (sm *safeMap) get(k string) (any, bool) {
 	sm.mu.RLock()
-	defer sm.mu.RUnlock()
 	v, ok := sm.data[k]
+	sm.mu.RUnlock()
 	return v, ok
 }
 

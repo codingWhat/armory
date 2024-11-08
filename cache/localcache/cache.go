@@ -2,8 +2,10 @@ package localcache
 
 import (
 	"container/list"
+	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -13,11 +15,25 @@ var (
 )
 
 type Cache interface {
-	Set(k string, v any, ttl time.Duration) bool
+	Set(ctx context.Context, k string, v any, ttl time.Duration) bool
 	Get(k string) (v any, err error)
 	Del(k string)
 	Len() uint64
 	Close()
+}
+
+var entPool = &sync.Pool{
+	New: func() any {
+		return &entExtendFunc{}
+	},
+}
+
+func getEntExtendFunc() *entExtendFunc {
+	return entPool.Get().(*entExtendFunc)
+}
+func putEntExtendFunc(e *entExtendFunc) {
+	e.afterDo = nil
+	entPool.Put(e)
 }
 
 type entExtendFunc struct {
@@ -35,8 +51,7 @@ func New(ops ...Option) Cache {
 		size:        100,
 		store:       newShardedMap(),
 		ekt:         newExpireKeyTimers(time.Second, 60),
-		updateEvtCh: make(chan *entExtendFunc, 1024),
-		addEvtCh:    make(chan *entExtendFunc, 1024),
+		setEvtCh:    make(chan *entExtendFunc, 1024),
 		delEvtCh:    make(chan *keyExtendFunc, 1024),
 		accessEvtCh: make(chan []*list.Element, 1024),
 		stop:        make(chan struct{}),
@@ -63,8 +78,7 @@ type cache struct {
 	accessRingBuffer RingBuffer
 
 	accessEvtCh chan []*list.Element //需要合并
-	updateEvtCh chan *entExtendFunc
-	addEvtCh    chan *entExtendFunc
+	setEvtCh    chan *entExtendFunc
 	delEvtCh    chan *keyExtendFunc
 
 	stop chan struct{}
@@ -88,28 +102,32 @@ func (c *cache) access(elements []*list.Element) {
 }
 
 func (c *cache) evtProcessor() {
+	var ef *entExtendFunc
 	for {
 		select {
 		case elements := <-c.accessEvtCh:
 			c.access(elements)
-		case ef := <-c.addEvtCh:
-			c.add(ef.ent)
+		case ef = <-c.setEvtCh:
+			if ef.ent.isUpdate {
+				c.update(ef.ent)
+			} else {
+				c.add(ef.ent)
+			}
 			if ef.afterDo != nil {
 				ef.afterDo()
 			}
-		case ef := <-c.updateEvtCh:
-			c.update(ef.ent)
-			if ef.afterDo != nil {
-				ef.afterDo()
-			}
-		case ef := <-c.delEvtCh:
-			c.del(ef.key)
-			if ef.afterDo != nil {
-				ef.afterDo()
+		case kef := <-c.delEvtCh:
+			c.del(kef.key)
+			if kef.afterDo != nil {
+				kef.afterDo()
 			}
 		case <-c.stop:
 			fmt.Println("cache quit")
 			return
+		}
+		if ef != nil {
+			putEntExtendFunc(ef)
+			ef = nil
 		}
 	}
 }
@@ -158,81 +176,63 @@ func (c *cache) update(e *entry) {
 	}
 }
 
-func (c *cache) Set(k string, v any, ttl time.Duration) bool {
-	val, hit := c.store.get(k)
+var waiterPool = sync.Pool{
+	New: func() any {
+		return &sync.WaitGroup{}
+	},
+}
+
+func (c *cache) Set(ctx context.Context, k string, v any, ttl time.Duration) bool {
 
 	var (
-		waitSig chan struct{}
-		afterDo func()
+		ent *entry
 	)
-	if c.isSync {
-		waitSig = make(chan struct{})
-		afterDo = func() {
-			close(waitSig)
-		}
-	}
-
+	val, hit := c.store.get(k)
+	eeF := getEntExtendFunc()
 	if hit {
-		ent := getEntry(val.(*list.Element))
-		//细节: 防止读到脏数据，立即更新；注意add是异步操作，多写 -> 单写, 减少锁竞争
+		ent = getEntry(val.(*list.Element))
 		ent.mu.Lock()
 		ent.val = v
+		ent.isUpdate = true
 		ent.expireAt = time.Now().Add(ttl)
 		ent.mu.Unlock()
-
-		if c.isSync {
-			select {
-			case c.updateEvtCh <- &entExtendFunc{
-				afterDo: afterDo,
-				ent:     ent,
-			}:
-				<-waitSig
-				return true
-			case <-time.After(c.setTimeout):
-				return false
-			default:
-				return false
-			}
-		} else {
-			select {
-			case c.updateEvtCh <- &entExtendFunc{ent: ent}:
-				return true
-			default:
-				return false
-			}
-		}
-
-	}
-
-	ent := &entry{key: k, val: v, expireAt: time.Now().Add(ttl)}
-	if c.isSync {
-		select {
-		case c.addEvtCh <- &entExtendFunc{afterDo: afterDo, ent: ent}:
-			<-waitSig
-			return true
-		case <-time.After(c.setTimeout):
-			return false
-		default:
-			return false
-		}
 	} else {
+		ent = &entry{key: k, val: v, expireAt: time.Now().Add(ttl)}
+	}
+	eeF.ent = ent
+
+	var push2SetCh = func() bool {
 		select {
-		case c.addEvtCh <- &entExtendFunc{ent: ent}:
+		case c.setEvtCh <- eeF:
 			return true
+		case <-ctx.Done():
+			return false
 		default:
+			if c.isSync {
+				c.setEvtCh <- eeF
+				return true
+			}
 			return false
 		}
 	}
+	if c.isSync {
+		waiter := waiterPool.Get().(*sync.WaitGroup)
+		waiter.Add(1)
+		eeF.afterDo = waiter.Done
+		if push2SetCh() {
+			waiter.Wait()
+		}
+		return true
+	}
 
+	return push2SetCh()
 }
 
 func (c *cache) Del(k string) {
 	if c.isSync {
-		waitSig := make(chan struct{})
-		c.delEvtCh <- &keyExtendFunc{key: k, afterDo: func() {
-			close(waitSig)
-		}}
-		<-waitSig
+		waiter := waiterPool.Get().(*sync.WaitGroup)
+		c.delEvtCh <- &keyExtendFunc{key: k, afterDo: waiter.Done}
+		waiter.Wait()
 		return
 	}
 
@@ -244,8 +244,6 @@ func (c *cache) Get(k string) (any, error) {
 	if exists {
 		ele := v.(*list.Element)
 		ent := getEntry(ele)
-		ent.mu.Lock()
-		defer ent.mu.Unlock()
 		if time.Now().After(ent.expireAt) {
 			return nil, ErrKeyIsExpired
 		}
@@ -257,10 +255,8 @@ func (c *cache) Get(k string) (any, error) {
 
 func (c *cache) Close() {
 	c.stop <- struct{}{}
-
 	close(c.stop)
-	close(c.updateEvtCh)
-	close(c.addEvtCh)
+	close(c.setEvtCh)
 	close(c.delEvtCh)
 	close(c.accessEvtCh)
 

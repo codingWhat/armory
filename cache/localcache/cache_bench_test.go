@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/allegro/bigcache/v3"
+	"github.com/dgraph-io/ristretto"
 	"math/rand"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +31,16 @@ type constructor[T any] interface {
 
 func key(i int) string {
 	return fmt.Sprintf("key-%010d", i)
+}
+
+// 泛型函数，用于初始化一个 Ristretto 缓存
+func initRistretto[Key string, Val any]() *ristretto.Cache[Key, Val] {
+	cache, _ := ristretto.NewCache[Key, Val](&ristretto.Config[Key, Val]{
+		NumCounters: int64(100000 * 10), // 10倍的最大元素数量，用于计数器
+		MaxCost:     1e6,                // 最大成本，可以根据实际情况调整
+		BufferItems: 64,                 // 缓冲区大小
+	})
+	return cache
 }
 
 func initBigCache(entriesInWindow int) *bigcache.BigCache {
@@ -91,6 +103,21 @@ func FreeCacheSetParallel[T any](cs constructor[T], b *testing.B) {
 		}
 	})
 }
+func BenchmarkRistrettoSetParallelForStruct(b *testing.B) {
+	RistrettoSetParallel[myStruct](structConstructor{}, b)
+}
+
+func RistrettoSetParallel[T any](cs constructor[T], b *testing.B) {
+	cache := initRistretto[string, myStruct]()
+	b.RunParallel(func(pb *testing.PB) {
+		thread := rand.Intn(1000)
+		for pb.Next() {
+			id := rand.Intn(maxEntryCount)
+			cache.Set(parallelKey(thread, id), myStruct{Id: id}, 10)
+			cache.Wait()
+		}
+	})
+}
 
 func BenchmarkFreeCacheSetParallelForStruct(b *testing.B) {
 	FreeCacheSetParallel[myStruct](structConstructor{}, b)
@@ -114,14 +141,17 @@ func BenchmarkBigCacheSetParallelForStruct(b *testing.B) {
 }
 
 func LCSetParallel[T any](cs constructor[T], b *testing.B) {
-	cache := New(WithCapacity(10000), WithSetTimout(100*time.Millisecond))
+	cache := New(WithCapacity(10000), WithSyncMode())
 	b.RunParallel(func(pb *testing.PB) {
 		thread := rand.Intn(1000)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		for pb.Next() {
 			id := rand.Intn(maxEntryCount)
 			//data, _ := cs.ToBytes(cs.Get(id))
-			cache.Set(parallelKey(thread, id), cs.Get(id), 2*time.Second)
+			cache.Set(ctx, parallelKey(thread, id), cs.Get(id), 2*time.Second)
+
 		}
+		cancel()
 	})
 }
 func BenchmarkLCSetParallelForStruct(b *testing.B) {
@@ -197,12 +227,36 @@ func BenchmarkBigCacheGetParallelForStruct(b *testing.B) {
 	BigCacheGetParallel[myStruct](structConstructor{}, b)
 }
 
+func BenchmarkRistrettoGetParallelForStruct(b *testing.B) {
+	RistrettoGetParallel[myStruct](structConstructor{}, b)
+}
+
+func RistrettoGetParallel[T any](cs constructor[T], b *testing.B) {
+	b.StopTimer()
+	cache := initRistretto[string, myStruct]()
+	for i := 0; i < maxEntryCount; i++ {
+		cache.Set(strconv.Itoa(i), myStruct{Id: i}, 10)
+		cache.Wait()
+	}
+	b.StartTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			id := rand.Intn(maxEntryCount)
+			data, _ := cache.Get(key(id))
+			_ = data
+		}
+	})
+}
+
 func LCGetParallel[T any](cs constructor[T], b *testing.B) {
 	b.StopTimer()
-	cache := New(WithCapacity(10000), WithSetTimout(100*time.Millisecond))
+	cache := New(WithCapacity(10000), WithSyncMode())
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	for i := 0; i < maxEntryCount; i++ {
-		cache.Set(key(i), cs.Get(i), 2*time.Second)
+		cache.Set(ctx, key(i), cs.Get(i), 2*time.Second)
 	}
+	cancel()
 	b.StartTimer()
 
 	b.RunParallel(func(pb *testing.PB) {

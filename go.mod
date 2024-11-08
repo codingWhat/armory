@@ -1,6 +1,8 @@
 module github.com/codingWhat/armory
 
-go 1.22.4
+go 1.23
+
+toolchain go1.23.2
 
 require (
 	git.woa.com/polaris/polaris-go/v2 v2.6.5
@@ -32,7 +34,7 @@ require (
 	go.etcd.io/bbolt v1.3.9
 	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6
 	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.24.0
+	golang.org/x/sys v0.26.0
 	golang.org/x/time v0.6.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12
@@ -46,6 +48,7 @@ require (
 	git.woa.com/polaris/polaris-server-api/api/v2/grpc v1.0.0 // indirect
 	git.woa.com/polaris/polaris-server-api/api/v2/model v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bruceshao/lockfree v1.1.2 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
@@ -53,6 +56,7 @@ require (
 	github.com/codingWhat/goroutinepool v0.0.0-20241023094720-ec018876ed44 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/ristretto v0.1.2-0.20240116140435-c67e07994f91 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.0.0-alpha // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/go-resiliency v1.6.0 // indirect
@@ -123,6 +127,7 @@ require (
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
+	golang.org/x/telemetry v0.0.0-20241028140143-9c0d19e65ba0 // indirect
 	golang.org/x/text v0.17.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/grpc v1.56.3 // indirect

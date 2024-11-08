@@ -11,6 +11,8 @@ type entry struct {
 	val      any
 	expireAt time.Time
 
+	isUpdate bool
+
 	mu sync.RWMutex
 }
 

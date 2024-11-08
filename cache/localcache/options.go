@@ -1,7 +1,5 @@
 package localcache
 
-import "time"
-
 func WithCapacity(size int) Option {
 	return func(c *cache) {
 		if size <= 0 {
@@ -11,9 +9,9 @@ func WithCapacity(size int) Option {
 	}
 }
 
-func WithSetTimout(t time.Duration) Option {
+func WithSyncMode() Option {
 	return func(c *cache) {
-		c.setTimeout = t
+		//c.setTimeout = t
 		c.isSync = true
 	}
 }

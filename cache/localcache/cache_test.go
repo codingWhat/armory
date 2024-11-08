@@ -1,6 +1,7 @@
 package localcache
 
 import (
+	"context"
 	"github.com/stretchr/testify/assert"
 	"strconv"
 	"testing"
@@ -8,16 +9,18 @@ import (
 )
 
 func Test_cache_LRU(t *testing.T) {
-	c := New(WithCapacity(3), WithSetTimout(1*time.Second))
+	c := New(WithCapacity(3), WithSyncMode())
 	defer c.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 	for i := 0; i < 4; i++ {
 		if i == 2 {
 			for j := 0; j < 10; j++ {
 				c.Get("0")
 			}
 		}
-		assert.Equal(t, true, c.Set(strconv.Itoa(i), i, 10*time.Second))
+		assert.Equal(t, true, c.Set(ctx, strconv.Itoa(i), i, 10*time.Second))
 	}
 
 	for i := 0; i < 4; i++ {
@@ -35,8 +38,11 @@ func Test_cache_LRU(t *testing.T) {
 }
 func Test_cache_Set(t *testing.T) {
 
-	c := New(WithCapacity(3), WithSetTimout(1*time.Second))
+	c := New(WithCapacity(3), WithSyncMode())
 	defer c.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 
 	type myStruct struct {
 		Id int
@@ -60,7 +66,7 @@ func Test_cache_Set(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			if got := c.Set(tt.args.k, tt.args.v, tt.args.ttl); got != tt.want {
+			if got := c.Set(ctx, tt.args.k, tt.args.v, tt.args.ttl); got != tt.want {
 				t.Errorf("Set() = %v, want %v", got, tt.want)
 			}
 		})
